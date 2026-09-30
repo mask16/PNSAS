@@ -1,0 +1,2248 @@
+{% extends "base.html" %}
+
+{% block content %}
+{% set history_ep = 'rods_history' if is_rods else 'history' %}
+{% set report_ep = 'rods_report' if is_rods else 'report' %}
+{% if dashboard %}
+<section class="home-dash">
+  <header class="home-dash-hero">
+    <h1 class="home-dash-title">{{ dashboard.user_name }}님, 안녕하세요</h1>
+    <p class="home-dash-sub">
+      {% if dashboard.is_office_account %}
+      사무소 접수 계정으로 로그인되어 있습니다.
+      {% else %}
+      {{ dashboard.team_name }} · {{ dashboard.account_label }}으로 로그인되어 있습니다.
+      {% if (dashboard.is_executive or dashboard.is_sales_head) and not dashboard.is_tech_mgmt %}
+      전사 <strong>최근 접수 현황</strong>을 아래에서 확인할 수 있습니다.
+      {% endif %}
+      {% endif %}
+    </p>
+  </header>
+
+  {% if dashboard.pending_transfers %}
+  <section class="home-transfer-block" aria-label="이관 요청 대기">
+    <h2 class="home-dash-section-title">이관 요청 대기 <span class="home-transfer-count">{{ dashboard.pending_transfer_count }}건</span></h2>
+    <div class="home-transfer-cards">
+      {% for t in dashboard.pending_transfers %}
+      <article class="home-transfer-card" data-transfer-id="{{ t.id }}">
+        <div class="home-transfer-main">
+          <strong>{{ t.receipt_no }}</strong>
+          <span>{{ t.customer_name }} · {{ t.equipment_name }}</span>
+          <span class="home-transfer-route">{{ t.from_team_label }} → {{ t.to_team_label }}</span>
+          {% if t.reason %}<p class="home-transfer-reason">{{ t.reason }}</p>{% endif %}
+          {% if t.proposed_as_name %}<p class="home-transfer-propose">제안 담당: {{ t.proposed_as_name }}</p>{% endif %}
+          <p class="home-transfer-meta">요청: {{ t.requested_by_name }} · {{ t.requested_at }}</p>
+        </div>
+        {% if t.can_decide %}
+        <div class="home-transfer-actions">
+          <button type="button" class="btn btn-primary js-transfer-decide" data-id="{{ t.id }}" data-decision="approve">승인</button>
+          <button type="button" class="btn btn-outline js-transfer-decide" data-id="{{ t.id }}" data-decision="reject">거절</button>
+        </div>
+        {% else %}
+        <p class="home-transfer-meta">승인·거절은 팀장 또는 부서장·총괄·관리자만 가능합니다.</p>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="home-dash-actions">
+    {% if dashboard.is_tech_mgmt %}
+    <a href="{{ url_for('tech_monitor') }}" class="home-dash-action home-dash-action-primary">
+      <span class="home-dash-action-icon" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+      </span>
+      <span>
+        <strong>개입·보상 관리</strong>
+        <small>고심각도 건에 개입하고 조치·보상 협의 상태를 관리합니다</small>
+      </span>
+    </a>
+    <a href="{{ url_for('status_report') }}" class="home-dash-action">
+      <span class="home-dash-action-icon" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 3v18h18"/>
+          <path d="M7 14l4-4 3 3 5-6"/>
+        </svg>
+      </span>
+      <span>
+        <strong>현황보고</strong>
+        <small>팀별·월별 AS 현황을 한눈에 확인합니다</small>
+      </span>
+    </a>
+    {% elif dashboard.is_executive or dashboard.is_sales_head %}
+    <a href="{{ url_for('status_report') }}" class="home-dash-action home-dash-action-primary">
+      <span class="home-dash-action-icon" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 3v18h18"/>
+          <path d="M7 14l4-4 3 3 5-6"/>
+        </svg>
+      </span>
+      <span>
+        <strong>현황보고</strong>
+        <small>팀별·월별 접수·처리·미처리 현황을 한눈에 확인합니다</small>
+      </span>
+    </a>
+    <a href="#recent-receipts" class="home-dash-action">
+      <span class="home-dash-action-icon" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+        </svg>
+      </span>
+      <span>
+        <strong>최근 접수 현황</strong>
+        <small>전사 최신 접수·미처리·청구 현황을 바로 확인합니다</small>
+      </span>
+    </a>
+    {% else %}
+    {% if current_user_can_sales %}
+    <a href="{{ url_for('rods_sales' if is_rods else 'sales') }}" class="home-dash-action">
+      <span class="home-dash-action-icon" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+      </span>
+      <span>
+        <strong>신규 AS 접수</strong>
+        <small>고객사로부터 받은 AS 요청을 등록합니다</small>
+      </span>
+    </a>
+    {% endif %}
+    {% if current_user_can_history and not dashboard.is_office_account %}
+    <a href="{{ url_for('rods_history' if is_rods else 'history') }}" class="home-dash-action">
+      <span class="home-dash-action-icon" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+        </svg>
+      </span>
+      <span>
+        <strong>이력 입력 · 처리</strong>
+        <small>현장/공장 작업 내용을 기록하고 완료 처리합니다</small>
+      </span>
+    </a>
+    {% endif %}
+    {% endif %}
+    <a href="{{ url_for('rods_report' if is_rods else 'report') }}" class="home-dash-action">
+      <span class="home-dash-action-icon" aria-hidden="true">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/>
+        </svg>
+      </span>
+      <span>
+        <strong>AS 보고서 조회</strong>
+        <small>완료된 건의 수리보고서를 조회·출력합니다</small>
+      </span>
+    </a>
+  </div>
+
+  {% if (dashboard.is_executive or dashboard.is_sales_head) and not dashboard.is_tech_mgmt and dashboard.recent_stats %}
+  <section class="home-recent-block" id="recent-receipts"
+           data-recent-today="{{ dashboard.recent_stats.today_key or dashboard.today or '' }}"
+           data-recent-week-ago="{{ dashboard.recent_stats.week_ago or '' }}"
+           data-recent-month="{{ dashboard.recent_stats.month_key or '' }}"
+           data-recent-preview="{{ dashboard.recent_stats.preview_limit or 25 }}">
+    <div class="home-recent-head">
+      <div>
+        <h2 class="home-dash-section-title">최근 접수 현황</h2>
+        <p class="page-desc">전사 접수 건을 최신순으로 확인합니다. 상세 집계는 현황보고·CSV에서 확인할 수 있습니다.
+          · 표시 중 <strong data-recent-visible>{{ dashboard.recent_stats.preview_limit or 25 }}</strong>건
+        </p>
+      </div>
+      <a href="{{ url_for('status_report') }}" class="home-priority-link">현황보고 · CSV →</a>
+    </div>
+    <div class="home-dash-stats is-five home-recent-stats" data-recent-stat-cards>
+      <button type="button" class="home-dash-stat is-clickable" data-recent-filter="today"
+              aria-pressed="false" aria-label="금일 접수 {{ dashboard.recent_stats.today }}건 목록 보기"
+              title="클릭하면 금일 접수 건을 표시합니다">
+        <span class="home-dash-stat-label">금일 접수</span>
+        <strong class="home-dash-stat-value">{{ dashboard.recent_stats.today }}건</strong>
+      </button>
+      <button type="button" class="home-dash-stat is-clickable" data-recent-filter="week"
+              aria-pressed="false" aria-label="최근 7일 접수 {{ dashboard.recent_stats.week }}건 목록 보기"
+              title="클릭하면 최근 7일 접수 건을 표시합니다">
+        <span class="home-dash-stat-label">최근 7일 접수</span>
+        <strong class="home-dash-stat-value">{{ dashboard.recent_stats.week }}건</strong>
+      </button>
+      <button type="button" class="home-dash-stat is-clickable" data-recent-filter="month"
+              aria-pressed="false" aria-label="이번 달 접수 {{ dashboard.recent_stats.month }}건 목록 보기"
+              title="클릭하면 이번 달 접수 건을 표시합니다">
+        <span class="home-dash-stat-label">이번 달 접수</span>
+        <strong class="home-dash-stat-value">{{ dashboard.recent_stats.month }}건</strong>
+      </button>
+      <button type="button" class="home-dash-stat is-clickable" data-recent-filter="pending"
+              aria-pressed="false" aria-label="미처리 {{ dashboard.recent_stats.pending }}건 목록 보기"
+              title="클릭하면 미처리 건을 표시합니다">
+        <span class="home-dash-stat-label">미처리</span>
+        <strong class="home-dash-stat-value is-progress">{{ dashboard.recent_stats.pending }}건</strong>
+      </button>
+      <button type="button" class="home-dash-stat is-clickable" data-recent-filter="completed-week"
+              aria-pressed="false" aria-label="최근 7일 완료 {{ dashboard.recent_stats.completed_week }}건 목록 보기"
+              title="클릭하면 최근 7일 완료 건을 표시합니다">
+        <span class="home-dash-stat-label">최근 7일 완료</span>
+        <strong class="home-dash-stat-value is-done">{{ dashboard.recent_stats.completed_week }}건</strong>
+      </button>
+    </div>
+
+    <div class="table-wrap home-recent-table-wrap">
+      <table class="receipt-table home-dash-table home-recent-table mobile-list-table" data-recent-table>
+        <thead>
+          <tr>
+            <th class="home-dash-col-no">접수번호</th>
+            <th class="home-dash-col-date">접수일</th>
+            <th class="home-dash-col-team">AS 대응팀</th>
+            <th class="home-dash-col-customer">고객명</th>
+            <th class="home-dash-col-equipment">장비명</th>
+            <th class="home-dash-col-symptoms">증상</th>
+            <th class="home-dash-col-charge">유/무상</th>
+            <th class="home-dash-col-assignee">AS담당</th>
+            <th class="home-dash-col-status">상태</th>
+            <th class="home-dash-col-billing">청구</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in dashboard.recent_receipts %}
+          <tr data-recent-row
+              data-recent-idx="{{ loop.index0 }}"
+              data-receipt-date="{{ (r.receipt_date or '')[:10] }}"
+              data-completed-date="{{ (r.completed_date or '')[:10] }}"
+              data-status="{{ r.status or '' }}"
+              data-pending="{% if r.status in ('received', 'draft', 'in_progress', 'parts_waiting', 'on_hold') %}1{% else %}0{% endif %}">
+            <td class="home-dash-col-no" data-label="접수번호">
+              <a href="{{ url_for(report_ep, receipt_no=r.receipt_no) }}" class="receipt-link">{{ r.receipt_no }}</a>
+            </td>
+            <td class="home-dash-col-date" data-label="접수일">{{ r.receipt_date }}</td>
+            <td class="home-dash-col-team" data-label="AS 대응팀" title="{{ r.team }}">{{ r.team }}</td>
+            <td class="home-dash-col-customer" data-label="고객명" title="{{ r.customer_name }}">{{ r.customer_name }}</td>
+            <td class="home-dash-col-equipment" data-label="장비명" title="{{ r.equipment_name }}"><span class="home-dash-equipment-text">{{ r.equipment_name }}</span></td>
+            <td class="home-dash-col-symptoms" data-label="증상" title="{{ r.symptoms }}">
+              <span class="home-dash-symptoms-text">{{ r.symptoms }}</span>
+            </td>
+            <td class="home-dash-col-charge" data-label="유/무상">
+              <span class="charge-badge {{ 'charge-free' if r.charge_type == 'free' else 'charge-paid' }}">
+                {{ r.charge_label }}
+              </span>
+            </td>
+            <td class="home-dash-col-assignee" data-label="AS담당">{% include '_assignee_display.html' %}</td>
+            <td class="home-dash-col-status" data-label="상태">
+              <span class="status-badge status-{{ r.status_class }}">{{ r.status_label }}</span>
+            </td>
+            <td class="home-dash-col-billing" data-label="청구">{{ r.billing_display }}</td>
+          </tr>
+          {% else %}
+          <tr data-recent-empty>
+            <td colspan="10" class="table-empty home-dash-empty">최근 접수 건이 없습니다.</td>
+          </tr>
+          {% endfor %}
+          <tr data-recent-nomatch hidden>
+            <td colspan="10" class="table-empty home-dash-empty">조건에 맞는 접수 건이 없습니다.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <script>
+  (function () {
+    const root = document.getElementById('recent-receipts');
+    if (!root) return;
+    const table = root.querySelector('[data-recent-table]');
+    const visibleEl = root.querySelector('[data-recent-visible]');
+    const noMatch = root.querySelector('[data-recent-nomatch]');
+    const btns = Array.from(root.querySelectorAll('[data-recent-filter]'));
+    const today = root.getAttribute('data-recent-today') || '';
+    const weekAgo = root.getAttribute('data-recent-week-ago') || '';
+    const monthKey = root.getAttribute('data-recent-month') || '';
+    const previewLimit = parseInt(root.getAttribute('data-recent-preview') || '25', 10) || 25;
+    let current = '';
+
+    function rows() {
+      return Array.from(table.querySelectorAll('tbody tr[data-recent-row]'));
+    }
+
+    function matchFilter(tr, filter) {
+      const recv = tr.getAttribute('data-receipt-date') || '';
+      const done = tr.getAttribute('data-completed-date') || '';
+      const pending = tr.getAttribute('data-pending') === '1';
+      const status = tr.getAttribute('data-status') || '';
+      if (filter === 'today') return recv === today;
+      if (filter === 'week') return !!recv && recv >= weekAgo;
+      if (filter === 'month') return !!recv && recv.indexOf(monthKey) === 0;
+      if (filter === 'pending') return pending;
+      if (filter === 'completed-week') return status === 'completed' && !!done && done >= weekAgo;
+      return true;
+    }
+
+    function apply() {
+      const list = rows();
+      let shown = 0;
+      list.forEach((tr) => {
+        let on;
+        if (!current) {
+          const idx = parseInt(tr.getAttribute('data-recent-idx') || '0', 10);
+          on = idx < previewLimit;
+        } else {
+          on = matchFilter(tr, current);
+        }
+        tr.hidden = !on;
+        if (on) shown += 1;
+      });
+      if (visibleEl) visibleEl.textContent = String(shown);
+      if (noMatch) noMatch.hidden = !(list.length && shown === 0);
+      btns.forEach((btn) => {
+        const on = !!current && btn.dataset.recentFilter === current;
+        btn.classList.toggle('is-active', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+
+    btns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.recentFilter || '';
+        current = current === key ? '' : key;
+        apply();
+        if (current && table) {
+          table.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      });
+    });
+    apply();
+  })();
+  </script>
+  {% endif %}
+
+  {% if dashboard.is_tech_mgmt %}
+  <section class="home-list-tabs home-dash-stats-tabs home-dash-stats-framed" id="homeTechStatsTabs">
+    <div class="home-list-tab-nav" role="tablist" aria-label="현황 통계">
+      <button type="button" class="home-list-tab is-active" role="tab" aria-selected="true"
+              data-stats-tab="accuracy" id="statsTabAccuracy">
+        자동 감지 정확도 통계
+      </button>
+      <button type="button" class="home-list-tab" role="tab" aria-selected="false"
+              data-stats-tab="overall" id="statsTabOverall">
+        전체 AS 현황
+      </button>
+      <button type="button" class="home-list-tab" role="tab" aria-selected="false"
+              data-stats-tab="teams" id="statsTabTeams">
+        팀별 AS 현황
+      </button>
+    </div>
+
+    <div class="home-list-panel is-active" role="tabpanel" data-stats-panel="accuracy"
+         aria-labelledby="statsTabAccuracy" id="auto-accuracy">
+      <section class="home-dash-stats-block home-auto-accuracy">
+        <h2 class="home-dash-section-title">자동 감지 정확도 통계</h2>
+        <p class="page-desc">
+          최고기술경영실 전용. 현재 데이터 기준으로 매번 재계산됩니다
+          (검토 시점 스냅샷이 아님). 「일반」미검토 건은 정확도 분모에서 제외됩니다.
+        </p>
+        {% if dashboard.auto_accuracy %}
+        <div class="home-dash-stats is-four">
+          <div class="home-dash-stat">
+            <span class="home-dash-stat-label">누적 자동감지 이력</span>
+            <strong class="home-dash-stat-value">{{ dashboard.auto_accuracy.total_flagged }}</strong>
+            <span class="home-dash-stat-sub">규칙 해당 전체(검토 여부 무관)</span>
+          </div>
+          <div class="home-dash-stat">
+            <span class="home-dash-stat-label">실제 문제로 확인</span>
+            <strong class="home-dash-stat-value">{{ dashboard.auto_accuracy.confirmed }}</strong>
+            <span class="home-dash-stat-sub">모니터링·심각·종결</span>
+          </div>
+          <div class="home-dash-stat">
+            <span class="home-dash-stat-label">오탐(문제없음)</span>
+            <strong class="home-dash-stat-value">{{ dashboard.auto_accuracy.false_positive }}</strong>
+            <span class="home-dash-stat-sub">문제없음 지정</span>
+          </div>
+          <div class="home-dash-stat">
+            <span class="home-dash-stat-label">감지 정확도</span>
+            <strong class="home-dash-stat-value">{% if dashboard.auto_accuracy.accuracy is none %}—{% else %}{{ dashboard.auto_accuracy.accuracy }}%{% endif %}</strong>
+            <span class="home-dash-stat-sub">
+              {% if dashboard.auto_accuracy.accuracy is none %}
+              아직 검토된 건 없음
+              {% else %}
+              실제문제 ÷ (실제문제+오탐)
+              {% endif %}
+            </span>
+          </div>
+        </div>
+        {% else %}
+        <p class="home-dash-empty">정확도 통계를 아직 계산할 수 없습니다.</p>
+        {% endif %}
+      </section>
+    </div>
+
+    <div class="home-list-panel" role="tabpanel" data-stats-panel="overall"
+         aria-labelledby="statsTabOverall" hidden>
+      <section class="home-dash-stats-block">
+        <h2 class="home-dash-section-title">전체 AS 현황</h2>
+        <div class="home-dash-stats is-tech">
+          <div class="home-dash-stat">
+            <span class="home-dash-stat-label">금일 접수</span>
+            <strong class="home-dash-stat-value">{{ dashboard.stats.today }}건</strong>
+          </div>
+          <div class="home-dash-stat">
+            <span class="home-dash-stat-label">진행중</span>
+            <strong class="home-dash-stat-value is-progress">{{ dashboard.stats.in_progress }}건</strong>
+          </div>
+          <div class="home-dash-stat">
+            <span class="home-dash-stat-label">누적 완료</span>
+            <strong class="home-dash-stat-value is-done">{{ dashboard.stats.completed }}건</strong>
+          </div>
+          <div class="home-dash-stat">
+            <span class="home-dash-stat-label">완료율</span>
+            <strong class="home-dash-stat-value is-rate">{{ dashboard.stats.rate }}%</strong>
+          </div>
+          <div class="home-dash-stat">
+            <span class="home-dash-stat-label">전체 접수</span>
+            <strong class="home-dash-stat-value">{{ dashboard.stats.total }}건</strong>
+          </div>
+          <div class="home-dash-stat">
+            <span class="home-dash-stat-label">고심각도</span>
+            <strong class="home-dash-stat-value is-progress">{{ dashboard.stats.high_severity }}건</strong>
+          </div>
+          <div class="home-dash-stat">
+            <span class="home-dash-stat-label">개입중</span>
+            <strong class="home-dash-stat-value">{{ dashboard.stats.intervening }}건</strong>
+          </div>
+          <div class="home-dash-stat">
+            <span class="home-dash-stat-label">보상 협의중</span>
+            <strong class="home-dash-stat-value is-rate">{{ dashboard.stats.negotiating }}건</strong>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="home-list-panel" role="tabpanel" data-stats-panel="teams"
+         aria-labelledby="statsTabTeams" hidden>
+      <section class="home-dash-stats-block">
+        <h2 class="home-dash-section-title">팀별 AS 현황</h2>
+        {% if dashboard.team_breakdown %}
+        <div class="home-dash-team-grid">
+          {% for t in dashboard.team_breakdown %}
+          <article class="home-dash-team-card">
+            <h3 class="home-dash-team-card-title">{{ t.team_name }}</h3>
+            <div class="home-dash-team-card-stats">
+              <div><span>금일</span><strong>{{ t.stats.today }}건</strong></div>
+              <div><span>진행중</span><strong class="is-progress">{{ t.stats.in_progress }}건</strong></div>
+              <div><span>완료</span><strong class="is-done">{{ t.stats.completed }}건</strong></div>
+              <div><span>완료율</span><strong class="is-rate">{{ t.stats.rate }}%</strong></div>
+            </div>
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="home-dash-empty">팀별 현황 데이터가 없습니다.</p>
+        {% endif %}
+      </section>
+    </div>
+  </section>
+
+  {% else %}
+  {% if not dashboard.is_office_account %}
+  <section class="home-dash-stats-block home-dash-stats-framed">
+    <h2 class="home-dash-section-title home-dash-section-title-framed">{{ dashboard.team_name }} AS 현황</h2>
+    {% if dashboard.queue_summary %}
+    <div class="home-queue-summary home-queue-summary-grid{% if dashboard.queue_summary.team_unassigned_wait >= 1 or dashboard.queue_summary.assigned_to_me_wait >= 1 %} is-warn{% endif %}" role="status" aria-live="polite">
+      <span class="queue-summary-badge queue-badge-wait queue-badge-wide" aria-label="[대기] 팀 미지정 대기 {{ dashboard.queue_summary.team_unassigned_wait }}건">
+        <span class="queue-summary-icon" aria-hidden="true">⏳</span>
+        팀 미지정 대기 {{ dashboard.queue_summary.team_unassigned_wait }}건
+      </span>
+      <span class="queue-summary-badge queue-badge-assigned" aria-label="[지정] 나에게 지정된 대기 {{ dashboard.queue_summary.assigned_to_me_wait }}건">
+        <span class="queue-summary-icon" aria-hidden="true">📌</span>
+        나에게 지정된 대기 {{ dashboard.queue_summary.assigned_to_me_wait }}건
+      </span>
+      <span class="queue-summary-badge queue-badge-progress" aria-label="[처리중] 내 진행중 {{ dashboard.queue_summary.my_in_progress }}건">
+        <span class="queue-summary-icon" aria-hidden="true">🔧</span>
+        내 진행중 {{ dashboard.queue_summary.my_in_progress }}건
+      </span>
+    </div>
+    {% endif %}
+    <div class="home-dash-stats{% if dashboard.is_all_viewer %} is-five{% endif %}" data-home-stat-cards data-today="{{ dashboard.today or '' }}">
+      <button type="button" class="home-dash-stat is-clickable" data-home-stat-filter="today"
+              aria-pressed="false"
+              aria-label="금일 접수 {{ dashboard.stats.today }}건 목록 보기"
+              title="클릭하면 금일 접수 건을 표시합니다">
+        <span class="home-dash-stat-label">금일 접수</span>
+        <strong class="home-dash-stat-value">{{ dashboard.stats.today }}건</strong>
+      </button>
+      <button type="button" class="home-dash-stat is-clickable" data-home-stat-filter="in-progress"
+              aria-pressed="false"
+              aria-label="진행중 {{ dashboard.stats.in_progress }}건 목록 보기"
+              title="클릭하면 진행중 건을 표시합니다">
+        <span class="home-dash-stat-label">진행중</span>
+        <strong class="home-dash-stat-value is-progress">{{ dashboard.stats.in_progress }}건</strong>
+      </button>
+      <div class="home-dash-stat">
+        <span class="home-dash-stat-label">누적 완료</span>
+        <strong class="home-dash-stat-value is-done">{{ dashboard.stats.completed }}건</strong>
+      </div>
+      <div class="home-dash-stat">
+        <span class="home-dash-stat-label">완료율</span>
+        <strong class="home-dash-stat-value is-rate">{{ dashboard.stats.rate }}%</strong>
+      </div>
+      {% if dashboard.is_all_viewer %}
+      <div class="home-dash-stat">
+        <span class="home-dash-stat-label">전체 접수</span>
+        <strong class="home-dash-stat-value">{{ dashboard.stats.total }}건</strong>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if dashboard.is_all_viewer and dashboard.team_breakdown %}
+  <section class="home-dash-stats-block">
+    <h2 class="home-dash-section-title">팀별 AS 현황</h2>
+    <div class="home-dash-team-grid">
+      {% for t in dashboard.team_breakdown %}
+      <article class="home-dash-team-card">
+        <h3 class="home-dash-team-card-title">{{ t.team_name }}</h3>
+        <div class="home-dash-team-card-stats">
+          <div><span>금일</span><strong>{{ t.stats.today }}건</strong></div>
+          <div><span>진행중</span><strong class="is-progress">{{ t.stats.in_progress }}건</strong></div>
+          <div><span>완료</span><strong class="is-done">{{ t.stats.completed }}건</strong></div>
+          <div><span>완료율</span><strong class="is-rate">{{ t.stats.rate }}%</strong></div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+  {% endif %}
+  {% endif %}
+
+  {% if dashboard.is_tech_mgmt %}
+  <section class="home-list-tabs home-dash-table-block home-dash-stats-framed" id="homeTechTabs">
+    <div class="home-list-tab-nav" role="tablist" aria-label="최고기술경영실 홈">
+      <button type="button" class="home-list-tab is-active" role="tab" aria-selected="true"
+              data-home-tab="priority" id="homeTabPriority">
+        심각·모니터링 대상
+        <span class="home-list-tab-count">{{ dashboard.monitor_priority_total }}</span>
+      </button>
+      <button type="button" class="home-list-tab" role="tab" aria-selected="false"
+              data-home-tab="auto" id="homeTabAuto">
+        시스템 자동 감지
+        <span class="home-list-tab-count">{{ dashboard.auto_flagged_total or (dashboard.auto_flagged|length) }}</span>
+      </button>
+      <button type="button" class="home-list-tab" role="tab" aria-selected="false"
+              data-home-tab="team" id="homeTabTeamAll">
+        팀 AS 목록 — 전체
+        <span class="home-list-tab-count">{{ dashboard.team_receipts_total }}</span>
+      </button>
+    </div>
+
+    <div class="home-list-panel is-active" role="tabpanel" data-home-panel="priority"
+         aria-labelledby="homeTabPriority" id="priority-cases"
+         {% if dashboard.panels_lazy %}data-cards-lazy="1" data-cards-api="{{ url_for('api_home_tech_cards') }}"{% endif %}>
+      <section class="home-priority-block">
+        <div class="home-priority-head">
+          <h2 class="home-dash-section-title">심각·모니터링 대상 건</h2>
+          <a href="{{ url_for('tech_monitor', escalation='active', tab='list') }}" class="home-priority-link">개입·보상 관리 →</a>
+        </div>
+        <div id="homePriorityMount">
+          {% if dashboard.panels_lazy %}
+          <p class="home-dash-empty" id="homePriorityPlaceholder">목록을 불러오는 중…</p>
+          {% elif dashboard.monitor_priority %}
+          <div class="home-priority-cards">
+            {% for r in dashboard.monitor_priority %}
+            <a class="home-priority-card esc-{{ r.escalation_level }}"
+               href="{{ url_for('tech_monitor', escalation='active', tab='list', focus=r.receipt_no, _anchor='case-edit') }}">
+              <span class="home-priority-badge">{{ r.escalation_label }}</span>
+              <strong>{{ r.receipt_no }}</strong>
+              <span>{{ r.customer_name }} · {{ r.equipment_name }}</span>
+              <span class="home-priority-team">{{ r.team }}</span>
+            </a>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="home-dash-empty">현재 모니터링·심각 대상 건이 없습니다.</p>
+          {% endif %}
+        </div>
+      </section>
+    </div>
+
+    <div class="home-list-panel" role="tabpanel" data-home-panel="auto"
+         aria-labelledby="homeTabAuto" id="auto-detect" hidden
+         {% if dashboard.panels_lazy %}data-cards-lazy="1" data-cards-api="{{ url_for('api_home_tech_cards') }}"{% endif %}>
+      <section class="home-dash-stats-block home-auto-detect">
+        <h2 class="home-dash-section-title">시스템 자동 감지 — 검토 필요 후보</h2>
+        <p class="page-desc">
+          담당자 미보고 건을 데이터 규칙으로 발굴합니다. <strong>강제 에스컬레이션하지 않으며</strong>,
+          「검토·등급지정」에서 정식 등급을 부여해야 합니다.
+          모니터링·심각으로 지정하면 <strong>심각·모니터링 대상</strong>으로 이동하고,
+          <strong>문제없음</strong>으로 지정해야 후보 목록에서 빠집니다.
+          「일반」으로 두면 조건이 유지되는 한 다음 방문 시 다시 노출됩니다.
+          (검토완료·문제없음 <span id="homeAutoClearedCount">{{ dashboard.auto_cleared_count }}</span>건)
+        </p>
+        <ul class="auto-detect-rules form-hint">
+          <li>동일장비 반복접수 ≥ 3회</li>
+          <li>고액청구 ≥ 300만원 또는 부품합계 ≥ 200만원</li>
+          <li>장기미해결 ≥ 14일(미완료)</li>
+          <li>부품다량교체 ≥ 4종</li>
+          <li>동일고객 90일 내 ≥ 3건</li>
+        </ul>
+        <div id="homeAutoMount">
+          {% if dashboard.panels_lazy %}
+          <p class="table-empty" id="homeAutoPlaceholder">탭을 열면 후보 목록을 불러옵니다.</p>
+          {% elif dashboard.auto_flagged %}
+          <div class="auto-detect-cards">
+            {% for r in dashboard.auto_flagged %}
+            <article class="auto-detect-card"
+                     data-no="{{ r.receipt_no }}"
+                     data-customer="{{ r.customer_name }}"
+                     data-equipment="{{ r.equipment_name }}"
+                     data-team="{{ r.team }}"
+                     data-flags="{{ r.auto_flag_labels|join(' · ') }}"
+                     data-escalation="{{ r.escalation_level or 'normal' }}">
+              <div class="auto-detect-card-head">
+                <a href="{{ url_for(report_ep, receipt_no=r.receipt_no) }}" class="receipt-link">{{ r.receipt_no }}</a>
+                <span class="auto-detect-meta">{{ r.team }} · {{ r.status_label }}{% if r.days_open is not none %} · {{ r.days_open }}일{% endif %}</span>
+              </div>
+              <div class="auto-detect-cust">{{ r.customer_name }} · {{ r.equipment_name }}</div>
+              <div class="auto-detect-flags">
+                {% for lab in r.auto_flag_labels %}
+                <span class="auto-flag-badge">{{ lab }}</span>
+                {% endfor %}
+              </div>
+              <button type="button" class="btn btn-primary auto-detect-review js-open-review">검토·등급지정</button>
+            </article>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="table-empty">자동 감지 후보가 없습니다.</p>
+          {% endif %}
+        </div>
+      </section>
+    </div>
+
+    <div class="home-list-panel" role="tabpanel" data-home-panel="team"
+         aria-labelledby="homeTabTeamAll" hidden
+         {% if dashboard.team_receipts_lazy %}data-team-lazy="1"
+         data-team-api="{{ url_for('api_home_team_receipts') }}"
+         data-report-base="{{ url_for(report_ep) }}"{% endif %}>
+      <h2 class="home-dash-section-title">팀 AS 목록 — {{ dashboard.team_name }}</h2>
+      {% if dashboard.queue_summary %}
+      {% with queue_summary=dashboard.queue_summary %}
+      {% include '_queue_summary_filter_bar.html' %}
+      {% endwith %}
+      {% endif %}
+      <p class="page-desc">
+        전체 <strong id="homeTeamListTotal">{{ dashboard.team_receipts_total }}</strong>건
+        · 표시 중 <strong id="homeTeamListVisible">{% if dashboard.team_receipts_lazy %}0{% else %}{{ dashboard.team_receipts|length }}{% endif %}</strong>건
+        {% if dashboard.team_receipts_lazy %}<span id="homeTeamLoadHint" class="form-hint"> · 탭을 열면 목록을 불러옵니다</span>{% endif %}
+      </p>
+
+      <div class="tech-monitor-filters home-team-filters" id="homeTeamFilters">
+        <label class="tech-monitor-search">
+          검색
+          <input type="search" id="homeTeamSearch" class="form-input"
+                 placeholder="접수번호·고객·장비·증상·담당자" autocomplete="off">
+        </label>
+        <label>
+          AS 상태
+          <select id="homeTeamStatus" class="form-input">
+            <option value="">전체 상태</option>
+            {% for code, label in dashboard.home_status_options %}
+            <option value="{{ code }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          에스컬레이션
+          <select id="homeTeamEsc" class="form-input">
+            <option value="">전체 등급</option>
+            {% for code, label in dashboard.escalation_options %}
+            <option value="{{ code }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>
+          AS 대응팀
+          <select id="homeTeamTeam" class="form-input">
+            <option value="">전체 팀</option>
+            {% for team in dashboard.home_teams %}
+            <option value="{{ team.name }}">{{ team.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="tech-monitor-filter-actions">
+          <button type="button" class="btn btn-outline" id="homeTeamFilterReset">초기화</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="receipt-table home-dash-table home-dash-table-team is-tech-mgmt mobile-list-table" id="homeTeamTable">
+          <thead>
+            <tr>
+              <th class="home-dash-col-no">접수번호</th>
+              <th class="home-dash-col-date">접수일</th>
+              <th class="home-dash-col-team">AS 대응팀</th>
+              <th class="home-dash-col-customer">고객명</th>
+              <th class="home-dash-col-equipment">장비명</th>
+              <th>증상</th>
+              <th>담당자</th>
+              <th>에스컬레이션</th>
+              <th class="home-dash-col-mail">메일</th>
+              <th class="home-dash-col-status">상태</th>
+            </tr>
+          </thead>
+          <tbody id="homeTeamTbody">
+            {% if dashboard.team_receipts_lazy %}
+            <tr id="homeTeamLoadingRow">
+              <td colspan="10" class="home-dash-empty">목록을 불러오는 중…</td>
+            </tr>
+            {% else %}
+            {% for r in dashboard.team_receipts %}
+            <tr class="{% if r.escalation_level in ('monitor', 'critical') %}home-dash-row-high{% endif %}"
+                data-status="{{ r.status or '' }}"
+                data-esc="{{ r.escalation_level or 'normal' }}"
+                data-team="{{ r.team or '' }}"
+                data-search="{{ (r.receipt_no ~ ' ' ~ r.customer_display ~ ' ' ~ r.equipment_name ~ ' ' ~ r.symptoms ~ ' ' ~ r.assignee_display ~ ' ' ~ r.team ~ ' ' ~ r.status_label ~ ' ' ~ r.escalation_label)|e }}">
+              <td class="home-dash-col-no">
+                <a href="{{ url_for(report_ep, receipt_no=r.receipt_no) }}" class="receipt-link">{{ r.receipt_no }}</a>
+              </td>
+              <td class="home-dash-col-date">{{ r.receipt_date }}</td>
+              <td class="home-dash-col-team" title="{{ r.team }}">{{ r.team }}</td>
+              <td class="home-dash-col-customer" title="{{ r.customer_display }}">{{ r.customer_display }}</td>
+              <td class="home-dash-col-equipment" title="{{ r.equipment_name }}"><span class="home-dash-equipment-text">{{ r.equipment_name }}</span></td>
+              <td class="home-dash-col-symptoms" title="{{ r.symptoms }}">
+                <span class="home-dash-symptoms-text">{{ r.symptoms }}</span>
+              </td>
+              <td class="home-dash-col-assignee">{% include '_assignee_display.html' %}</td>
+              <td class="home-dash-col-severity">
+                <span class="escalation-badge esc-{{ r.escalation_level }}">{{ r.escalation_label }}</span>
+              </td>
+              <td class="home-dash-col-mail" data-label="메일">
+                <div class="receipt-mail-cell">
+                  {% if r.notice_sent %}
+                  <span class="receipt-email-sent" title="안내 메일이 발송되었습니다">발송됨</span>
+                  {% elif dashboard.mail_enabled and r.can_send_email %}
+                  <form action="{{ url_for('receipt_send_email', receipt_no=r.receipt_no) }}"
+                        method="post"
+                        onsubmit="return confirm('{{ r.receipt_no }} 건의 AS 안내 메일을 발송하시겠습니까?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="receipt-email-btn" title="안내 메일 발송">발송</button>
+                  </form>
+                  {% elif not dashboard.mail_enabled %}
+                  <span class="receipt-owner-only" title="mail.env 설정 필요">설정 필요</span>
+                  {% else %}
+                  <span class="receipt-owner-only" title="담당자 이메일 미등록">없음</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td class="home-dash-col-status" data-label="상태">
+                <span class="status-badge status-{{ r.status_class }}">{{ r.status_label }}</span>
+              </td>
+            </tr>
+            {% else %}
+            <tr id="homeTeamEmptyRow">
+              <td colspan="10" class="home-dash-empty">등록된 AS 건이 없습니다.</td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+            <tr id="homeTeamNoMatch" hidden>
+              <td colspan="10" class="home-dash-empty">검색·필터 조건에 맞는 건이 없습니다.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  {% else %}
+  <section class="home-list-tabs home-dash-table-block home-dash-stats-framed" id="homeListTabs"{% if dashboard.is_office_account %} data-default-tab="my-receipts"{% endif %}>
+    {% if not dashboard.is_all_viewer and not dashboard.is_office_account %}
+    <div class="home-list-tab-nav" role="tablist" aria-label="AS 목록">
+      <button type="button" class="home-list-tab is-active" role="tab" aria-selected="true"
+              data-home-tab="team" id="homeTabTeam">
+        팀 AS 목록
+        <span class="home-list-tab-count">{{ dashboard.team_receipts|length }}</span>
+      </button>
+      <button type="button" class="home-list-tab" role="tab" aria-selected="false"
+              data-home-tab="my-receipts" id="homeTabMyReceipts">
+        {{ dashboard.my_receipts_tab_label or '내가 접수한 AS' }}
+        <span class="home-list-tab-count">{{ dashboard.my_receipts|length }}</span>
+      </button>
+      <button type="button" class="home-list-tab" role="tab" aria-selected="false"
+              data-home-tab="my-history" id="homeTabMyHistory">
+        내 AS 처리 이력
+        <span class="home-list-tab-count">{{ dashboard.my_as_history|length }}</span>
+      </button>
+    </div>
+    {% endif %}
+
+    <div class="home-list-panel{% if not dashboard.is_office_account %} is-active{% endif %}" role="tabpanel" data-home-panel="team"
+         {% if not dashboard.is_all_viewer %}aria-labelledby="homeTabTeam"{% endif %}
+         {% if dashboard.is_office_account %}hidden{% endif %}>
+      <h2 class="home-dash-section-title">팀 AS 목록 — {{ dashboard.team_name }}</h2>
+      {% if dashboard.queue_summary %}
+      {% with queue_summary=dashboard.queue_summary %}
+      {% include '_queue_summary_filter_bar.html' %}
+      {% endwith %}
+      {% endif %}
+      <p class="page-desc">
+        원 접수팀 태그·담당자(지정/실처리)를 함께 표시합니다.
+        {% if dashboard.team_receipts_limited %}
+        <strong>우선 {{ dashboard.team_receipts|length }}건</strong>만 표시합니다
+        (전체 {{ dashboard.team_receipts_total }}건 · 미완료 우선).
+        {% if dashboard.is_all_viewer %}
+        전체 집계는 <a href="{{ url_for('status_report') }}">현황보고</a>·CSV를 이용하세요.
+        {% endif %}
+        {% endif %}
+        · 표시 중 <strong data-filter-visible>{{ dashboard.team_receipts|length }}</strong>건
+      </p>
+      <div class="tech-monitor-filters home-team-filters" data-home-list-filters>
+        <label class="tech-monitor-search">
+          검색
+          <input type="search" class="form-input" data-filter-q
+                 placeholder="접수번호·고객·장비·증상·담당자" autocomplete="off">
+        </label>
+        <label>
+          AS 상태
+          <select class="form-input" data-filter-status>
+            <option value="">전체 상태</option>
+            {% for code, label in dashboard.home_status_options %}
+            <option value="{{ code }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% if dashboard.is_all_viewer %}
+        <label>
+          AS 대응팀
+          <select class="form-input" data-filter-team>
+            <option value="">전체 팀</option>
+            {% for team in dashboard.home_teams %}
+            <option value="{{ team.name }}">{{ team.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endif %}
+        <div class="tech-monitor-filter-actions">
+          <button type="button" class="btn btn-outline" data-filter-reset>초기화</button>
+          <a class="btn btn-outline" href="{{ url_for('api_home_export_csv', kind='team') }}"
+             data-csv-export data-csv-kind="team">CSV 다운로드</a>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="receipt-table home-dash-table home-dash-table-team{% if dashboard.is_all_viewer %} is-executive{% endif %} mobile-list-table"
+               data-home-list-table>
+          <thead>
+            <tr>
+              <th class="home-dash-col-no">접수번호</th>
+              <th class="home-dash-col-date">접수일</th>
+              {% if dashboard.is_all_viewer %}<th class="home-dash-col-team">AS 대응팀</th>{% endif %}
+              <th class="home-dash-col-customer">고객명</th>
+              <th class="home-dash-col-equipment">장비명</th>
+              <th>증상</th>
+              <th>담당자</th>
+              <th class="home-dash-col-mail">메일</th>
+              <th class="home-dash-col-status">상태</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in dashboard.team_receipts %}
+            <tr{% if r.escalation_level in ('monitor', 'critical') %} class="home-dash-row-high"{% endif %}
+                data-status="{{ r.status or '' }}"
+                data-team="{{ r.team or '' }}"
+                data-receipt-date="{{ (r.receipt_date or '')[:10] }}"
+                data-pending="{% if r.status in ('received', 'draft', 'in_progress', 'parts_waiting', 'on_hold') %}1{% else %}0{% endif %}"
+                data-queue-team-wait="{{ '1' if r.queue_team_unassigned_wait else '0' }}"
+                data-queue-team-progress="{{ '1' if r.queue_team_in_progress else '0' }}"
+                data-search="{{ (r.receipt_no ~ ' ' ~ r.customer_display ~ ' ' ~ r.equipment_name ~ ' ' ~ r.symptoms ~ ' ' ~ r.assignee_display ~ ' ' ~ (r.team or '') ~ ' ' ~ r.status_label)|e }}">
+              <td class="home-dash-col-no" data-label="접수번호">
+                <a href="{% if r.status == 'completed' or not current_user_can_history %}{{ url_for(report_ep, receipt_no=r.receipt_no) }}{% else %}{{ url_for(history_ep, tab=r.team_id, receipt_no=r.receipt_no) }}{% endif %}" class="receipt-link"{% if r.as_unassigned and r.can_claim_as %} data-claim-unassigned="1"{% endif %}>{{ r.receipt_no }}</a>
+              </td>
+              <td class="home-dash-col-date" data-label="접수일">{{ r.receipt_date }}</td>
+              {% if dashboard.is_all_viewer %}<td class="home-dash-col-team" data-label="AS 대응팀" title="{{ r.team }}">{{ r.team }}</td>{% endif %}
+              <td class="home-dash-col-customer" data-label="고객명" title="{{ r.customer_display }}">{{ r.customer_display }}</td>
+              <td class="home-dash-col-equipment" data-label="장비명" title="{{ r.equipment_name }}"><span class="home-dash-equipment-text">{{ r.equipment_name }}</span></td>
+              <td class="home-dash-col-symptoms" data-label="증상" title="{{ r.symptoms }}">
+                <span class="home-dash-symptoms-text">{{ r.symptoms }}</span>
+              </td>
+              {% include '_assignee_queue_cell.html' %}
+              <td class="home-dash-col-mail" data-label="메일">
+                <div class="receipt-mail-cell">
+                  {% if r.notice_sent %}
+                  <span class="receipt-email-sent" title="안내 메일이 발송되었습니다">발송됨</span>
+                  {% elif dashboard.mail_enabled and r.can_send_email %}
+                  <form action="{{ url_for('receipt_send_email', receipt_no=r.receipt_no) }}"
+                        method="post"
+                        onsubmit="return confirm('{{ r.receipt_no }} 건의 AS 안내 메일을 발송하시겠습니까?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="receipt-email-btn" title="안내 메일 발송">발송</button>
+                  </form>
+                  {% elif not dashboard.mail_enabled %}
+                  <span class="receipt-owner-only" title="mail.env 설정 필요">설정 필요</span>
+                  {% else %}
+                  <span class="receipt-owner-only" title="담당자 이메일 미등록">없음</span>
+                  {% endif %}
+                </div>
+              </td>
+              <td class="home-dash-col-status" data-label="상태">
+                <span class="status-badge status-{{ r.status_class }}">{{ r.status_label }}</span>
+              </td>
+            </tr>
+            {% else %}
+            <tr data-filter-empty>
+              <td colspan="{{ 9 if dashboard.is_all_viewer else 8 }}" class="home-dash-empty">등록된 AS 건이 없습니다.</td>
+            </tr>
+            {% endfor %}
+            <tr data-filter-nomatch hidden>
+              <td colspan="{{ 9 if dashboard.is_all_viewer else 8 }}" class="home-dash-empty">검색·필터 조건에 맞는 건이 없습니다.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if not dashboard.is_all_viewer %}
+    <div class="home-list-panel{% if dashboard.is_office_account %} is-active{% endif %}" role="tabpanel" data-home-panel="my-receipts"
+         {% if not dashboard.is_office_account %}aria-labelledby="homeTabMyReceipts" hidden{% endif %}>
+      <h2 class="home-dash-section-title">{{ dashboard.my_receipts_title or '내가 접수한 AS 목록' }}</h2>
+      <p class="page-desc">
+        {% if dashboard.is_office_account %}
+        전체 <strong>{{ dashboard.my_receipts|length }}</strong>건
+        · 완료 <strong>{{ dashboard.my_receipts_completed }}</strong>건
+        · 미완료 <strong>{{ dashboard.my_receipts_pending }}</strong>건
+        · 표시 중 <strong data-filter-visible>{{ dashboard.my_receipts|length }}</strong>건
+        {% else %}
+        전체 {{ dashboard.my_receipts|length }}건
+        · 표시 중 <strong data-filter-visible>{{ dashboard.my_receipts|length }}</strong>건
+        {% endif %}
+      </p>
+      <div class="tech-monitor-filters home-team-filters" data-home-list-filters>
+        <label class="tech-monitor-search">
+          검색
+          <input type="search" class="form-input" data-filter-q
+                 placeholder="접수번호·고객·장비·증상·AS 대응팀" autocomplete="off">
+        </label>
+        <label>
+          AS 상태
+          <select class="form-input" data-filter-status>
+            <option value="">전체 상태</option>
+            {% for code, label in dashboard.home_status_options %}
+            <option value="{{ code }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="tech-monitor-filter-actions">
+          <button type="button" class="btn btn-outline" data-filter-reset>초기화</button>
+          <a class="btn btn-outline" href="{{ url_for('api_home_export_csv', kind='my-receipts') }}"
+             data-csv-export data-csv-kind="my-receipts">CSV 다운로드</a>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="receipt-table home-dash-table home-dash-table-my{% if dashboard.is_office_account %} is-office{% endif %} mobile-list-table" data-home-list-table>
+          <thead>
+            <tr>
+              <th class="home-dash-col-no">접수번호</th>
+              <th class="home-dash-col-date">접수일</th>
+              <th class="home-dash-col-customer">고객명</th>
+              <th class="home-dash-col-equipment">장비명</th>
+              <th>증상</th>
+              {% if dashboard.is_office_account %}
+              <th class="home-dash-col-team">AS 대응팀</th>
+              <th>대기순번</th>
+              {% else %}
+              <th>담당자</th>
+              {% endif %}
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in dashboard.my_receipts %}
+            {% if dashboard.is_office_account %}{% set queue_cell_label = '대기순번' %}{% endif %}
+            <tr data-status="{{ r.status or '' }}"
+                data-search="{{ (r.receipt_no ~ ' ' ~ r.customer_display ~ ' ' ~ r.equipment_name ~ ' ' ~ r.symptoms ~ ' ' ~ r.team ~ ' ' ~ r.status_label ~ ' ' ~ (r.queue_text or ''))|e }}">
+              <td class="home-dash-col-no" data-label="접수번호"><a href="{% if r.status == 'completed' or not current_user_can_history %}{{ url_for(report_ep, receipt_no=r.receipt_no) }}{% else %}{{ url_for(history_ep, tab=r.team_id, receipt_no=r.receipt_no) }}{% endif %}" class="receipt-link"{% if r.as_unassigned and r.can_claim_as %} data-claim-unassigned="1"{% endif %}>{{ r.receipt_no }}</a></td>
+              <td class="home-dash-col-date" data-label="접수일">{{ r.receipt_date }}</td>
+              <td class="home-dash-col-customer" data-label="고객명" title="{{ r.customer_display }}">{{ r.customer_display }}</td>
+              <td class="home-dash-col-equipment" data-label="장비명" title="{{ r.equipment_name }}"><span class="home-dash-equipment-text">{{ r.equipment_name }}</span></td>
+              <td class="home-dash-col-symptoms" data-label="증상" title="{{ r.symptoms }}">
+                <span class="home-dash-symptoms-text">{{ r.symptoms or '—' }}</span>
+              </td>
+              {% if dashboard.is_office_account %}
+              <td class="home-dash-col-team" data-label="AS 대응팀" title="{{ r.team }}">{{ r.team }}</td>
+              {% endif %}
+              {% include '_assignee_queue_cell.html' %}
+              <td class="home-dash-col-status" data-label="상태"><span class="status-badge status-{{ r.status_class }}">{{ r.status_label }}</span></td>
+            </tr>
+            {% else %}
+            <tr data-filter-empty>
+              <td colspan="{{ 8 if dashboard.is_office_account else 7 }}" class="home-dash-empty">{% if dashboard.is_office_account %}우리 사무소에서 접수한 건이 없습니다.{% else %}아직 접수한 건이 없습니다.{% endif %}</td>
+            </tr>
+            {% endfor %}
+            <tr data-filter-nomatch hidden>
+              <td colspan="{{ 8 if dashboard.is_office_account else 7 }}" class="home-dash-empty">검색·필터 조건에 맞는 건이 없습니다.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {% if not dashboard.is_office_account %}
+    <div class="home-list-panel" role="tabpanel" data-home-panel="my-history"
+         aria-labelledby="homeTabMyHistory" hidden>
+      <h2 class="home-dash-section-title">내 AS 처리 이력 (진행중·완료 전체)</h2>
+      <p class="page-desc">
+        미완료 {{ dashboard.my_as_open_count }}건 · 완료 {{ dashboard.my_as_done_count }}건
+        · 표시 중 <strong data-filter-visible>{{ dashboard.my_as_history|length }}</strong>건
+      </p>
+      <div class="tech-monitor-filters home-team-filters" data-home-list-filters>
+        <label class="tech-monitor-search">
+          검색
+          <input type="search" class="form-input" data-filter-q
+                 placeholder="접수번호·고객·장비·증상·AS 대응팀" autocomplete="off">
+        </label>
+        <label>
+          AS 상태
+          <select class="form-input" data-filter-status>
+            <option value="">전체 상태</option>
+            {% for code, label in dashboard.home_status_options %}
+            <option value="{{ code }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="tech-monitor-filter-actions">
+          <button type="button" class="btn btn-outline" data-filter-reset>초기화</button>
+          <a class="btn btn-outline" href="{{ url_for('api_home_export_csv', kind='my-history') }}"
+             data-csv-export data-csv-kind="my-history">CSV 다운로드</a>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="receipt-table home-dash-table home-dash-table-history mobile-list-table" data-home-list-table>
+          <thead>
+            <tr>
+              <th class="home-dash-col-no">접수번호</th>
+              <th class="home-dash-col-date">접수일</th>
+              <th class="home-dash-col-customer">고객명</th>
+              <th class="home-dash-col-equipment">장비명</th>
+              <th>증상</th>
+              <th class="home-dash-col-team">AS 대응팀</th>
+              <th>상태</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in dashboard.my_as_history %}
+            <tr data-status="{{ r.status or '' }}"
+                data-search="{{ (r.receipt_no ~ ' ' ~ r.customer_display ~ ' ' ~ r.equipment_name ~ ' ' ~ r.symptoms ~ ' ' ~ r.team ~ ' ' ~ r.status_label)|e }}">
+              <td class="home-dash-col-no"><a href="{{ url_for(report_ep, receipt_no=r.receipt_no) }}" class="receipt-link">{{ r.receipt_no }}</a></td>
+              <td class="home-dash-col-date">{{ r.receipt_date }}</td>
+              <td class="home-dash-col-customer" title="{{ r.customer_display }}">{{ r.customer_display }}</td>
+              <td class="home-dash-col-equipment" title="{{ r.equipment_name }}"><span class="home-dash-equipment-text">{{ r.equipment_name }}</span></td>
+              <td class="home-dash-col-symptoms" title="{{ r.symptoms }}">
+                <span class="home-dash-symptoms-text">{{ r.symptoms }}</span>
+              </td>
+              <td class="home-dash-col-team" title="{{ r.team }}">{{ r.team }}</td>
+              <td class="home-dash-col-status" data-label="상태"><span class="status-badge status-{{ r.status_class }}">{{ r.status_label }}</span></td>
+            </tr>
+            {% else %}
+            <tr data-filter-empty>
+              <td colspan="7" class="home-dash-empty">
+                아직 처리한 건이 없습니다. 이력관리에서 건을 불러와 저장하면 자동으로 이 목록에 쌓입니다.
+              </td>
+            </tr>
+            {% endfor %}
+            <tr data-filter-nomatch hidden>
+              <td colspan="7" class="home-dash-empty">검색·필터 조건에 맞는 건이 없습니다.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+  </section>
+  {% endif %}
+</section>
+{% else %}
+<section class="hero">
+  <span class="hero-badge">HYUNDAI WELDING</span>
+  <h1 class="hero-title">웰딩 장비 AS 처리 시스템</h1>
+  <p class="hero-desc">
+    고객사로부터 접수된 AS 요청을 등록하고, 이력관리를 통하여 현장·공장에서의 처리 내용을 기록하며,<br>
+    완료 현황을 실시간으로 확인할 수 있습니다.
+  </p>
+</section>
+
+<div class="cards">
+  <a href="{{ url_for('sales') }}" class="card">
+    <h2 class="card-title">AS 접수</h2>
+    <p class="card-desc">고객사로부터 받은 AS 요청을 등록하여 새로운 접수 건을 생성합니다.</p>
+  </a>
+  <a href="{{ url_for(history_ep) }}" class="card">
+    <h2 class="card-title">AS 이력관리</h2>
+    <p class="card-desc">접수된 건을 조회하여 점검·수리 내용을 기록하고 완료 처리합니다.</p>
+  </a>
+</div>
+
+<p class="info-text">
+  우측 상단에서 담당자 계정으로 로그인하시면 담당하신 접수 현황과 AS 이력을 바로 확인하실 수 있습니다.
+</p>
+{% endif %}
+
+{% if dashboard and dashboard.is_tech_mgmt %}
+{# 자동감지 후보 → 개입 관리(등급지정) 모달 #}
+<div class="parts-modal" id="reviewModal" hidden>
+  <div class="parts-modal-backdrop" data-close-review></div>
+  <div class="parts-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="reviewModalTitle">
+    <div class="parts-modal-header">
+      <h3 id="reviewModalTitle">검토·등급지정</h3>
+      <button type="button" class="parts-modal-close" data-close-review aria-label="닫기">&times;</button>
+    </div>
+    <p class="form-hint" id="reviewModalMeta"></p>
+    <p class="form-hint" id="reviewModalFlags"></p>
+    <form id="reviewForm" method="post" action="">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="return_to" value="home">
+      <input type="hidden" name="intervention_status" id="reviewIntervention" value="none">
+      <input type="hidden" name="compensation_status" value="none">
+      <div class="form-group" style="margin:12px 0">
+        <label class="form-label">에스컬레이션 등급</label>
+        <select name="escalation_level" id="reviewEscalation" class="form-select" required>
+          {% for code, label in dashboard.escalation_options %}
+          <option value="{{ code }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+        <span class="form-hint">
+          모니터링·심각 → 「심각·모니터링 대상」으로 이동 /
+          문제없음 → 후보 목록에서 제외 /
+          일반 유지 → 조건이 같으면 다음에도 재노출
+        </span>
+      </div>
+      <div class="form-group">
+        <label class="form-label">조치 이력 (선택)</label>
+        <textarea name="intervention_log_entry" class="form-textarea" rows="2"
+                  placeholder="검토 내용·현장 확인 결과 등"></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">개입 메모 (선택)</label>
+        <textarea name="intervention_note" class="form-textarea" rows="2"></textarea>
+      </div>
+      <div class="parts-modal-actions">
+        <button type="button" class="btn btn-outline" data-close-review>취소</button>
+        <button type="submit" class="btn btn-primary">저장</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% if dashboard and not dashboard.is_tech_mgmt %}
+{# 홈 팀목록 AS 담당자 지정·변경 — 영업접수와 동일 카드 UI #}
+<div class="parts-modal assign-modal" id="homeAssignAsModal" hidden>
+  <div class="parts-modal-backdrop" data-close-home-assign></div>
+  <div class="parts-modal-dialog assign-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="homeAssignAsTitle">
+    <div class="parts-modal-header">
+      <h3 id="homeAssignAsTitle">AS 담당자 지정 · 변경 <span class="assign-limit-inline" id="homeAssignLimitBadge">(1명)</span></h3>
+      <button type="button" class="parts-modal-close" data-close-home-assign aria-label="닫기">&times;</button>
+    </div>
+    <p class="form-hint assign-modal-meta" id="homeAssignAsMeta"></p>
+
+    <div class="assign-drop-zone" id="homeAssignDropZone" data-drop-zone>
+      <span class="assign-drop-label" id="homeAssignDropLabel">지정할 담당자 — 담당자 1명을 지정합니다. 2명 이상 공동 지정은 팀장 또는 부서장·총괄·대표이사만 가능합니다.</span>
+      <div class="assign-drop-slot" id="homeAssignDropSlot">
+        <span class="assign-drop-placeholder">아래 담당자를 이곳으로 끌어다 놓으세요</span>
+      </div>
+    </div>
+
+    <p class="assign-permission-warn" id="homeAssignPermissionWarn" hidden></p>
+
+    <p class="assign-hint" id="homeAssignHint">담당자 카드를 탭·클릭으로 선택/해제할 수 있습니다. 다른 사람으로 바꾸려면 먼저 선택을 해제한 뒤 다시 선택하세요.</p>
+
+    <div class="assign-staff-grid" id="homeAssignStaffGrid" role="listbox" aria-label="AS 담당자 목록" aria-multiselectable="false"></div>
+
+    <div class="parts-modal-actions">
+      <button type="button" class="btn btn-outline" data-close-home-assign>취소</button>
+      <button type="button" class="btn btn-primary" id="homeAssignSaveBtn">지정 · 변경 적용</button>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if dashboard and not dashboard.is_tech_mgmt %}
+<script>
+(function () {
+  const AS_REASSIGN_OPTIONS = {{ (dashboard.as_reassign_options or [])|tojson }};
+  const EXPORT_AS_ALLOWED = new Set({{ (dashboard.export_as_allowed_codes or [])|tojson }});
+  const IS_SALES_HEAD = {{ 'true' if dashboard.is_sales_head or current_user_is_sales_head else 'false' }};
+  const CAN_MULTI_DEFAULT = {{ 'true' if current_user_can_multi_assign else 'false' }};
+  const AS_STAFF_MAX = {{ as_staff_max or 3 }};
+  const MULTI_DENIED_MSG = {{ (multi_assign_denied_msg or '담당자 여러 명 공동 지정은 팀장 또는 부서장·총괄·대표이사만 할 수 있습니다')|tojson }};
+
+  const modal = document.getElementById('homeAssignAsModal');
+  const meta = document.getElementById('homeAssignAsMeta');
+  const dropZone = document.getElementById('homeAssignDropZone');
+  const dropSlot = document.getElementById('homeAssignDropSlot');
+  const staffGrid = document.getElementById('homeAssignStaffGrid');
+  const saveBtn = document.getElementById('homeAssignSaveBtn');
+  const limitBadge = document.getElementById('homeAssignLimitBadge');
+  const hintEl = document.getElementById('homeAssignHint');
+  const dropLabel = document.getElementById('homeAssignDropLabel');
+  const warnEl = document.getElementById('homeAssignPermissionWarn');
+  if (!modal || !staffGrid) return;
+
+  let state = {
+    receiptNo: '', team: '', saving: false, canMulti: false,
+    selectedIds: [], selectedLabels: [], initialIds: []
+  };
+  let dragId = null;
+
+  function clearWarn() {
+    if (!warnEl) return;
+    warnEl.hidden = true;
+    warnEl.textContent = '';
+  }
+  function showWarn(msg) {
+    if (!warnEl) { alert(msg); return; }
+    warnEl.hidden = false;
+    warnEl.textContent = msg;
+  }
+  function escapeHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+  function shortLabel(label) {
+    return String(label || '').replace(/\s*\([^)]*\)\s*$/, '').trim() || label;
+  }
+  function optionsForTeam(team) {
+    let options = (AS_REASSIGN_OPTIONS || []).slice();
+    if (IS_SALES_HEAD) return options;
+    if (team === 'export') {
+      return options.filter(o => EXPORT_AS_ALLOWED.has(o.id));
+    }
+    return options.filter(o => !team || (o.team_code || '') === team);
+  }
+  function updateLimitUi() {
+    if (limitBadge) {
+      limitBadge.textContent = state.canMulti ? ('(최대 ' + AS_STAFF_MAX + '명)') : '(1명)';
+      limitBadge.classList.toggle('is-multi', !!state.canMulti);
+    }
+    if (dropLabel) {
+      dropLabel.textContent = state.canMulti
+        ? ('지정할 담당자 — 공동 담당은 최대 ' + AS_STAFF_MAX + '명까지 지정할 수 있습니다.')
+        : '지정할 담당자 — 담당자 1명을 지정합니다. 2명 이상 공동 지정은 팀장 또는 부서장·총괄·대표이사만 가능합니다.';
+    }
+    if (hintEl) {
+      hintEl.textContent = state.canMulti
+        ? ('담당자 카드를 탭·클릭(또는 드래그)으로 선택/해제할 수 있습니다. 공동 담당은 최대 ' + AS_STAFF_MAX + '명까지입니다.')
+        : '담당자 카드를 탭·클릭으로 선택/해제할 수 있습니다. 다른 사람으로 바꾸려면 먼저 선택을 해제한 뒤 다시 선택하세요.';
+    }
+    staffGrid.setAttribute('aria-multiselectable', state.canMulti ? 'true' : 'false');
+    clearWarn();
+  }
+  function syncLabels() {
+    const opts = optionsForTeam(state.team || '');
+    state.selectedLabels = state.selectedIds.map(cid => {
+      const hit = opts.find(o => o.id === cid);
+      return (hit && hit.label) || cid;
+    });
+  }
+  function renderSlot() {
+    if (!dropSlot) return;
+    dropSlot.innerHTML = '';
+    const ids = state.selectedIds || [];
+    const labels = state.selectedLabels || [];
+    if (!ids.length) {
+      const chip = document.createElement('div');
+      chip.className = 'assign-selected-chip is-unassigned';
+      chip.textContent = '미지정';
+      dropSlot.appendChild(chip);
+    } else {
+      ids.forEach((sid, idx) => {
+        const chip = document.createElement('div');
+        chip.className = 'assign-selected-chip';
+        chip.textContent = shortLabel(labels[idx] || sid);
+        chip.title = '탭하여 해제';
+        chip.addEventListener('click', () => {
+          state.selectedIds = state.selectedIds.filter(x => x !== sid);
+          syncLabels();
+          clearWarn();
+          renderSlot();
+        });
+        dropSlot.appendChild(chip);
+      });
+    }
+    staffGrid.querySelectorAll('.assign-staff-card').forEach(card => {
+      const on = (state.selectedIds || []).includes(card.dataset.id || '');
+      card.classList.toggle('is-selected', on);
+      card.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+  }
+  function selectStaff(id, label) {
+    id = id || '';
+    const ids = state.selectedIds || [];
+    const initial = state.initialIds || [];
+    if (!id) {
+      state.selectedIds = [];
+      syncLabels();
+      clearWarn();
+      renderSlot();
+      return;
+    }
+    if (state.canMulti) {
+      const idx = ids.indexOf(id);
+      if (idx >= 0) {
+        state.selectedIds = ids.filter(x => x !== id);
+        clearWarn();
+      } else if (ids.length >= AS_STAFF_MAX) {
+        showWarn('공동 담당은 최대 ' + AS_STAFF_MAX + '명까지입니다. 정원이 찬 상태에서는 추가할 수 없습니다.');
+        return;
+      } else {
+        state.selectedIds = ids.concat([id]);
+        clearWarn();
+      }
+    } else {
+      const idx = ids.indexOf(id);
+      if (idx >= 0) {
+        state.selectedIds = ids.filter(x => x !== id);
+        clearWarn();
+      } else if (ids.length === 0) {
+        state.selectedIds = [id];
+        clearWarn();
+      } else if (initial.length > 1 && initial.includes(id)) {
+        state.selectedIds = ids.concat([id]);
+        clearWarn();
+      } else {
+        showWarn(MULTI_DENIED_MSG + '. 먼저 선택된 담당자를 해제한 뒤 다시 선택해주세요.');
+        return;
+      }
+    }
+    syncLabels();
+    renderSlot();
+    if (dropZone) {
+      dropZone.classList.add('is-picked');
+      setTimeout(() => dropZone.classList.remove('is-picked'), 280);
+    }
+  }
+  function buildGrid(team) {
+    const options = optionsForTeam(team);
+    staffGrid.innerHTML = '';
+    const all = [{ id: '', label: '미지정' }].concat(options);
+    all.forEach(opt => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'assign-staff-card' + (opt.id ? '' : ' is-unassigned');
+      card.dataset.id = opt.id;
+      card.dataset.label = opt.label;
+      const coarse =
+        window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+      card.setAttribute('draggable', coarse ? 'false' : 'true');
+      card.setAttribute('role', 'option');
+      card.innerHTML =
+        '<span class="assign-staff-handle" aria-hidden="true"></span>' +
+        '<span class="assign-staff-name">' + escapeHtml(opt.label) + '</span>';
+      card.addEventListener('click', (e) => {
+        if (card.dataset.suppressClick === '1') {
+          card.dataset.suppressClick = '';
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
+        selectStaff(opt.id, opt.label);
+      });
+      card.addEventListener('dragstart', (e) => {
+        dragId = opt.id;
+        card.dataset.didHtmlDrag = '0';
+        card.classList.add('is-dragging');
+        if (e.dataTransfer) {
+          e.dataTransfer.setData('text/plain', opt.id || '__none__');
+          e.dataTransfer.effectAllowed = 'move';
+        }
+        if (dropZone) dropZone.classList.add('is-target');
+      });
+      card.addEventListener('drag', () => {
+        card.dataset.didHtmlDrag = '1';
+      });
+      card.addEventListener('dragend', () => {
+        dragId = null;
+        card.classList.remove('is-dragging');
+        if (card.dataset.didHtmlDrag === '1') {
+          card.dataset.suppressClick = '1';
+        }
+        card.dataset.didHtmlDrag = '';
+        if (dropZone) dropZone.classList.remove('is-target', 'is-over');
+      });
+      bindHomeAssignPointerDrag(card, opt);
+      staffGrid.appendChild(card);
+    });
+  }
+
+  function bindHomeAssignPointerDrag(card, opt) {
+    let dragging = false;
+    let active = false;
+    let ghost = null;
+    let startX = 0;
+    let startY = 0;
+    const DRAG_THRESHOLD = 8;
+
+    function cleanup() {
+      dragging = false;
+      active = false;
+      card.classList.remove('is-dragging');
+      if (ghost) {
+        ghost.remove();
+        ghost = null;
+      }
+      if (dropZone) dropZone.classList.remove('is-target', 'is-over');
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    }
+
+    function startGhost(e) {
+      if (ghost) return;
+      dragging = true;
+      card.classList.add('is-dragging');
+      ghost = card.cloneNode(true);
+      ghost.className = 'assign-staff-card assign-drag-ghost';
+      const rect = card.getBoundingClientRect();
+      ghost.style.left = rect.left + 'px';
+      ghost.style.top = rect.top + 'px';
+      ghost.style.transform =
+        'translate(' + (e.clientX - startX) + 'px, ' + (e.clientY - startY) + 'px)';
+      document.body.appendChild(ghost);
+      if (dropZone) dropZone.classList.add('is-target');
+    }
+
+    function onMove(e) {
+      if (!active) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (!dragging) {
+        if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > DRAG_THRESHOLD) {
+          cleanup();
+          return;
+        }
+        if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+          startGhost(e);
+        }
+      }
+      if (!dragging || !ghost) return;
+      ghost.style.transform = 'translate(' + dx + 'px, ' + dy + 'px)';
+      if (!dropZone) return;
+      const rect = dropZone.getBoundingClientRect();
+      const over =
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom;
+      dropZone.classList.toggle('is-over', over);
+    }
+
+    function onUp(e) {
+      if (!active) {
+        cleanup();
+        return;
+      }
+      if (!dragging) {
+        cleanup();
+        card.dataset.suppressClick = '1';
+        selectStaff(opt.id, opt.label);
+        return;
+      }
+      let dropped = false;
+      if (dropZone) {
+        const rect = dropZone.getBoundingClientRect();
+        dropped =
+          e.clientX >= rect.left &&
+          e.clientX <= rect.right &&
+          e.clientY >= rect.top &&
+          e.clientY <= rect.bottom;
+      }
+      cleanup();
+      card.dataset.suppressClick = '1';
+      if (dropped) selectStaff(opt.id, opt.label);
+    }
+
+    card.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      if (e.pointerType === 'mouse') return;
+      try { card.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      active = true;
+      dragging = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+    });
+  }
+  function openModal(btn) {
+    const team = btn.dataset.team || '';
+    const current = btn.dataset.current || '';
+    const currentIds = (btn.dataset.currentIds || current || '')
+      .split(',').map(s => s.trim()).filter(Boolean);
+    state = {
+      receiptNo: btn.dataset.no || '',
+      team: team,
+      saving: false,
+      canMulti: btn.dataset.canMulti === '1' || (btn.dataset.canMulti !== '0' && CAN_MULTI_DEFAULT),
+      selectedIds: currentIds.slice(),
+      selectedLabels: [],
+      initialIds: currentIds.slice(),
+    };
+    syncLabels();
+    updateLimitUi();
+    if (meta) {
+      meta.textContent = [btn.dataset.no, btn.dataset.customer, btn.dataset.equipment]
+        .filter(Boolean).join(' · ');
+    }
+    buildGrid(team);
+    renderSlot();
+    modal.hidden = false;
+  }
+  function closeModal() {
+    if (state.saving) return;
+    modal.hidden = true;
+    dragId = null;
+  }
+
+  document.querySelectorAll('.js-assign-as').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openModal(btn);
+    });
+  });
+  document.querySelectorAll('[data-close-home-assign]').forEach(el => {
+    el.addEventListener('click', closeModal);
+  });
+
+  if (dropZone) {
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('is-over');
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    });
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('is-over');
+    });
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('is-over', 'is-target');
+      const raw = (e.dataTransfer && e.dataTransfer.getData('text/plain')) || dragId || '';
+      const id = raw === '__none__' ? '' : raw;
+      const opts = optionsForTeam(state.team || '');
+      const hit = opts.find(o => o.id === id);
+      selectStaff(id, (hit && hit.label) || (id ? id : '미지정'));
+    });
+  }
+
+  saveBtn?.addEventListener('click', async () => {
+    if (!state.receiptNo || state.saving) return;
+    state.saving = true;
+    saveBtn.disabled = true;
+    const ids = state.selectedIds || [];
+    if (state.canMulti && ids.length > AS_STAFF_MAX) {
+      showWarn('공동 담당은 최대 ' + AS_STAFF_MAX + '명까지입니다. 정원이 찬 상태에서는 추가할 수 없습니다.');
+      state.saving = false;
+      saveBtn.disabled = false;
+      return;
+    }
+    if (!state.canMulti) {
+      const initial = state.initialIds || [];
+      const newcomers = ids.filter(id => !initial.includes(id));
+      if (ids.length > initial.length || (ids.length > 1 && newcomers.length)) {
+        showWarn(MULTI_DENIED_MSG + '. 먼저 선택된 담당자를 해제한 뒤 다시 선택해주세요.');
+        state.saving = false;
+        saveBtn.disabled = false;
+        return;
+      }
+    }
+    const fd = new FormData();
+    fd.append('receipt_no', state.receiptNo);
+    if (!ids.length) fd.append('as_staff', '');
+    else ids.forEach(id => fd.append('as_staff', id));
+    try {
+      const res = await fetch('/api/sales/assign-as', { method: 'POST', body: fd });
+      if (res.ok) location.reload();
+      else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || '담당자 재지정 실패(권한 또는 오류)');
+        state.saving = false;
+        saveBtn.disabled = false;
+      }
+    } catch (err) {
+      alert('담당자 재지정 실패(네트워크 오류)');
+      state.saving = false;
+      saveBtn.disabled = false;
+    }
+  });
+})();
+</script>
+{% endif %}
+{% if dashboard and dashboard.is_tech_mgmt %}
+<script>
+(function () {
+  const root = document.getElementById('homeTechStatsTabs');
+  if (!root) return;
+  const tabs = Array.from(root.querySelectorAll('[data-stats-tab]'));
+  const panels = Array.from(root.querySelectorAll('[data-stats-panel]'));
+  function activate(key) {
+    for (let i = 0; i < tabs.length; i += 1) {
+      const on = tabs[i].getAttribute('data-stats-tab') === key;
+      tabs[i].classList.toggle('is-active', on);
+      tabs[i].setAttribute('aria-selected', on ? 'true' : 'false');
+    }
+    for (let i = 0; i < panels.length; i += 1) {
+      const on = panels[i].getAttribute('data-stats-panel') === key;
+      panels[i].classList.toggle('is-active', on);
+      panels[i].hidden = !on;
+    }
+    try { sessionStorage.setItem('home_tech_stats_tab', key); } catch (e) { /* ignore */ }
+  }
+  for (let i = 0; i < tabs.length; i += 1) {
+    tabs[i].addEventListener('click', function (ev) {
+      ev.preventDefault();
+      activate(this.getAttribute('data-stats-tab'));
+    });
+  }
+  let initial = 'accuracy';
+  const hash = (location.hash || '').replace(/^#/, '');
+  if (hash === 'auto-accuracy') initial = 'accuracy';
+  else {
+    try {
+      const saved = sessionStorage.getItem('home_tech_stats_tab');
+      if (saved && root.querySelector('[data-stats-tab="' + saved + '"]')) initial = saved;
+    } catch (e) { /* ignore */ }
+  }
+  activate(initial);
+})();
+</script>
+<script>
+(function () {
+  const root = document.getElementById('homeTechTabs');
+  if (!root) return;
+  const tabs = root.querySelectorAll('[data-home-tab]');
+  const panels = root.querySelectorAll('[data-home-panel]');
+  const teamPanel = root.querySelector('[data-home-panel="team"]');
+  const priorityPanel = root.querySelector('[data-home-panel="priority"]');
+  const autoPanel = root.querySelector('[data-home-panel="auto"]');
+  let teamLoadState = 'idle'; // idle | loading | done | error
+  const cardLoadState = { priority: 'idle', auto: 'idle' };
+
+  function escHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function buildAssigneeHtml(r) {
+    let main = r.assignee_main || r.assignee || r.assignee_display || '미지정';
+    let sub = r.assignee_sub || '';
+    if (!sub) {
+      const raw = String(main || '').trim() || '미지정';
+      const m = raw.match(/^(.+?)\s*(\([^)]+\))\s*$/);
+      if (m) {
+        main = m[1].trim();
+        sub = m[2].trim();
+      }
+    }
+    const muted = !r.assignee || r.assignee === '미지정';
+    let html = '<span class="assignee-display' + (muted ? ' text-muted' : '') + '">';
+    html += '<span class="assignee-display-main">' + escHtml(main) + '</span>';
+    if (sub) {
+      html += '<span class="assignee-display-sub">' + escHtml(sub) + '</span>';
+    }
+    html += '</span>';
+    return html;
+  }
+
+  function buildTeamRow(r, mailEnabled, csrf, reportBase) {
+    const tr = document.createElement('tr');
+    const esc = r.escalation_level || 'normal';
+    if (esc === 'monitor' || esc === 'critical') tr.className = 'home-dash-row-high';
+    const search = [
+      r.receipt_no, r.customer_name, r.equipment_name, r.symptoms,
+      r.assignee, r.team, r.status_label, r.escalation_label
+    ].join(' ');
+    tr.setAttribute('data-status', r.status || '');
+    tr.setAttribute('data-esc', esc);
+    tr.setAttribute('data-team', r.team || '');
+    tr.setAttribute('data-search', search);
+
+    const reportUrl = reportBase + (reportBase.indexOf('?') >= 0 ? '&' : '?')
+      + 'receipt_no=' + encodeURIComponent(r.receipt_no || '');
+    let mailHtml;
+    if (r.notice_sent) {
+      mailHtml = '<div class="receipt-mail-cell"><span class="receipt-email-sent" title="안내 메일이 발송되었습니다">발송됨</span></div>';
+    } else if (mailEnabled && r.can_send_email) {
+      mailHtml =
+        '<div class="receipt-mail-cell">' +
+        '<form action="/receipt/' + encodeURIComponent(r.receipt_no || '') + '/send-email" method="post" ' +
+        'onsubmit="return confirm(\'' + escHtml(r.receipt_no) + ' 건의 AS 안내 메일을 발송하시겠습니까?\');">' +
+        '<input type="hidden" name="csrf_token" value="' + escHtml(csrf) + '">' +
+        '<button type="submit" class="receipt-email-btn" title="안내 메일 발송">발송</button></form></div>';
+    } else if (!mailEnabled) {
+      mailHtml = '<div class="receipt-mail-cell"><span class="receipt-owner-only" title="mail.env 설정 필요">설정 필요</span></div>';
+    } else {
+      mailHtml = '<div class="receipt-mail-cell"><span class="receipt-owner-only" title="담당자 이메일 미등록">없음</span></div>';
+    }
+
+    const unassigned = !r.assignee || r.assignee === '미지정';
+    tr.innerHTML =
+      '<td class="home-dash-col-no"><a href="' + escHtml(reportUrl) + '" class="receipt-link">' + escHtml(r.receipt_no) + '</a></td>' +
+      '<td class="home-dash-col-date">' + escHtml(r.receipt_date) + '</td>' +
+      '<td class="home-dash-col-team" title="' + escHtml(r.team) + '">' + escHtml(r.team) + '</td>' +
+      '<td class="home-dash-col-customer" title="' + escHtml(r.customer_name) + '">' + escHtml(r.customer_name) + '</td>' +
+      '<td class="home-dash-col-equipment" title="' + escHtml(r.equipment_name) + '"><span class="home-dash-equipment-text">' + escHtml(r.equipment_name) + '</span></td>' +
+      '<td class="home-dash-col-symptoms" title="' + escHtml(r.symptoms) + '"><span class="home-dash-symptoms-text">' + escHtml(r.symptoms) + '</span></td>' +
+      '<td class="home-dash-col-assignee">' + buildAssigneeHtml(r) + '</td>' +
+      '<td class="home-dash-col-severity"><span class="escalation-badge esc-' + escHtml(esc) + '">' +
+        escHtml(r.escalation_label) + '</span></td>' +
+      '<td class="home-dash-col-mail">' + mailHtml + '</td>' +
+      '<td class="home-dash-col-status"><span class="status-badge status-' + escHtml(r.status_class) + '">' +
+        escHtml(r.status_label) + '</span></td>';
+    return tr;
+  }
+
+  function renderTeamRows(payload) {
+    const tbody = document.getElementById('homeTeamTbody');
+    const noMatch = document.getElementById('homeTeamNoMatch');
+    const totalEl = document.getElementById('homeTeamListTotal');
+    const hint = document.getElementById('homeTeamLoadHint');
+    if (!tbody) return;
+    const items = (payload && payload.items) || [];
+    const mailEnabled = !!(payload && payload.mail_enabled);
+    const csrf = (payload && payload.csrf_token) || '';
+    const reportBase = (teamPanel && teamPanel.getAttribute('data-report-base')) || '/report';
+
+    Array.from(tbody.querySelectorAll('tr')).forEach((tr) => {
+      if (tr.id !== 'homeTeamNoMatch') tr.remove();
+    });
+
+    if (totalEl && payload && typeof payload.total === 'number') {
+      totalEl.textContent = String(payload.total);
+    }
+    if (hint) hint.hidden = true;
+
+    if (!items.length) {
+      const empty = document.createElement('tr');
+      empty.id = 'homeTeamEmptyRow';
+      empty.innerHTML = '<td colspan="10" class="home-dash-empty">등록된 AS 건이 없습니다.</td>';
+      tbody.insertBefore(empty, noMatch || null);
+      if (typeof window.__homeTeamRefreshFilters === 'function') {
+        window.__homeTeamRefreshFilters();
+      }
+      return;
+    }
+
+    // 대량 DOM을 한 프레임에 넣지 않아 통계 탭 클릭이 막히지 않게 함
+    const CHUNK = 40;
+    let idx = 0;
+    function paintChunk() {
+      const frag = document.createDocumentFragment();
+      const end = Math.min(idx + CHUNK, items.length);
+      for (; idx < end; idx += 1) {
+        frag.appendChild(buildTeamRow(items[idx], mailEnabled, csrf, reportBase));
+      }
+      tbody.insertBefore(frag, noMatch || null);
+      if (idx < items.length) {
+        window.requestAnimationFrame(paintChunk);
+      } else if (typeof window.__homeTeamRefreshFilters === 'function') {
+        window.__homeTeamRefreshFilters();
+      }
+    }
+    window.requestAnimationFrame(paintChunk);
+  }
+
+  function loadTeamList() {
+    if (!teamPanel || teamPanel.getAttribute('data-team-lazy') !== '1') return;
+    if (teamLoadState === 'loading' || teamLoadState === 'done') return;
+    const api = teamPanel.getAttribute('data-team-api');
+    if (!api) return;
+    teamLoadState = 'loading';
+    const loading = document.getElementById('homeTeamLoadingRow');
+    if (loading) loading.querySelector('td').textContent = '목록을 불러오는 중…';
+    fetch(api, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then((res) => {
+        if (!res.ok) throw new Error('load failed');
+        return res.json();
+      })
+      .then((data) => {
+        teamLoadState = 'done';
+        renderTeamRows(data);
+      })
+      .catch(() => {
+        teamLoadState = 'error';
+        if (loading) {
+          loading.querySelector('td').textContent = '목록을 불러오지 못했습니다. 탭을 다시 열어 주세요.';
+        }
+        setTimeout(() => { if (teamLoadState === 'error') teamLoadState = 'idle'; }, 800);
+      });
+  }
+
+  function loadPriorityCards() {
+    if (!priorityPanel || priorityPanel.getAttribute('data-cards-lazy') !== '1') return;
+    if (cardLoadState.priority === 'loading' || cardLoadState.priority === 'done') return;
+    const api = priorityPanel.getAttribute('data-cards-api');
+    const mount = document.getElementById('homePriorityMount');
+    if (!api || !mount) return;
+    cardLoadState.priority = 'loading';
+    fetch(api + '?kind=priority', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then((res) => {
+        if (!res.ok) throw new Error('load failed');
+        return res.json();
+      })
+      .then((data) => {
+        cardLoadState.priority = 'done';
+        const items = (data && data.items) || [];
+        if (!items.length) {
+          mount.innerHTML = '<p class="home-dash-empty">현재 모니터링·심각 대상 건이 없습니다.</p>';
+          return;
+        }
+        const html = items.map((r) => {
+          const esc = escHtml(r.escalation_level || 'normal');
+          const no = escHtml(r.receipt_no);
+          const href = '/tech-monitor?escalation=active&tab=list&focus='
+            + encodeURIComponent(r.receipt_no || '') + '#case-edit';
+          return '<a class="home-priority-card esc-' + esc + '" href="' + href + '">'
+            + '<span class="home-priority-badge">' + escHtml(r.escalation_label) + '</span>'
+            + '<strong>' + no + '</strong>'
+            + '<span>' + escHtml(r.customer_name) + ' · ' + escHtml(r.equipment_name) + '</span>'
+            + '<span class="home-priority-team">' + escHtml(r.team) + '</span></a>';
+        }).join('');
+        mount.innerHTML = '<div class="home-priority-cards">' + html + '</div>';
+      })
+      .catch(() => {
+        cardLoadState.priority = 'idle';
+        mount.innerHTML = '<p class="home-dash-empty">목록을 불러오지 못했습니다. 탭을 다시 열어 주세요.</p>';
+      });
+  }
+
+  function loadAutoCards() {
+    if (!autoPanel || autoPanel.getAttribute('data-cards-lazy') !== '1') return;
+    if (cardLoadState.auto === 'loading' || cardLoadState.auto === 'done') return;
+    const api = autoPanel.getAttribute('data-cards-api');
+    const mount = document.getElementById('homeAutoMount');
+    if (!api || !mount) return;
+    cardLoadState.auto = 'loading';
+    mount.innerHTML = '<p class="table-empty">후보 목록을 불러오는 중…</p>';
+    fetch(api + '?kind=auto', { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then((res) => {
+        if (!res.ok) throw new Error('load failed');
+        return res.json();
+      })
+      .then((data) => {
+        cardLoadState.auto = 'done';
+        const clearedEl = document.getElementById('homeAutoClearedCount');
+        if (clearedEl && data && typeof data.cleared_count === 'number') {
+          clearedEl.textContent = String(data.cleared_count);
+        }
+        const items = (data && data.items) || [];
+        if (!items.length) {
+          mount.innerHTML = '<p class="table-empty">자동 감지 후보가 없습니다.</p>';
+          return;
+        }
+        const html = items.map((r) => {
+          const flags = (r.auto_flag_labels || []).map((lab) =>
+            '<span class="auto-flag-badge">' + escHtml(lab) + '</span>'
+          ).join('');
+          const flagText = escHtml((r.auto_flag_labels || []).join(' · '));
+          const days = (r.days_open != null) ? (' · ' + escHtml(r.days_open) + '일') : '';
+          return '<article class="auto-detect-card"'
+            + ' data-no="' + escHtml(r.receipt_no) + '"'
+            + ' data-customer="' + escHtml(r.customer_name) + '"'
+            + ' data-equipment="' + escHtml(r.equipment_name) + '"'
+            + ' data-team="' + escHtml(r.team) + '"'
+            + ' data-flags="' + flagText + '"'
+            + ' data-escalation="' + escHtml(r.escalation_level || 'normal') + '">'
+            + '<div class="auto-detect-card-head">'
+            + '<a href="/report?receipt_no=' + encodeURIComponent(r.receipt_no || '') + '" class="receipt-link">'
+            + escHtml(r.receipt_no) + '</a>'
+            + '<span class="auto-detect-meta">' + escHtml(r.team) + ' · ' + escHtml(r.status_label) + days + '</span>'
+            + '</div>'
+            + '<div class="auto-detect-cust">' + escHtml(r.customer_name) + ' · ' + escHtml(r.equipment_name) + '</div>'
+            + '<div class="auto-detect-flags">' + flags + '</div>'
+            + '<button type="button" class="btn btn-primary auto-detect-review js-open-review">검토·등급지정</button>'
+            + '</article>';
+        }).join('');
+        mount.innerHTML = '<div class="auto-detect-cards">' + html + '</div>';
+      })
+      .catch(() => {
+        cardLoadState.auto = 'idle';
+        mount.innerHTML = '<p class="table-empty">목록을 불러오지 못했습니다. 탭을 다시 열어 주세요.</p>';
+      });
+  }
+
+  function activate(key) {
+    tabs.forEach((tab) => {
+      const on = tab.getAttribute('data-home-tab') === key;
+      tab.classList.toggle('is-active', on);
+      tab.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    panels.forEach((panel) => {
+      const on = panel.getAttribute('data-home-panel') === key;
+      panel.classList.toggle('is-active', on);
+      panel.hidden = !on;
+    });
+    try { sessionStorage.setItem('home_tech_tab', key); } catch (e) { /* ignore */ }
+    if (key === 'team') loadTeamList();
+    if (key === 'auto') loadAutoCards();
+  }
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const key = tab.getAttribute('data-home-tab');
+      activate(key);
+      if (key === 'priority') loadPriorityCards();
+    });
+  });
+  const hash = (location.hash || '').replace(/^#/, '');
+  let initial = 'priority';
+  if (hash === 'auto-detect') initial = 'auto';
+  else if (hash === 'priority-cases') initial = 'priority';
+  else if (hash === 'team' || hash === 'team-list') initial = 'team';
+  else {
+    try {
+      const saved = sessionStorage.getItem('home_tech_tab');
+      // 팀 전체 목록은 무거우므로 자동 복원하지 않음 (통계 탭 반응 저하 방지)
+      if (saved && saved !== 'team' && root.querySelector('[data-home-tab="' + saved + '"]')) {
+        initial = saved;
+      }
+    } catch (e) { /* ignore */ }
+  }
+  activate(initial);
+  // 통계 탭이 먼저 반응하도록, 우선순위 카드는 유휴 시점에 로드
+  if (initial === 'priority') {
+    const defer = window.requestIdleCallback
+      || function (cb) { return setTimeout(cb, 200); };
+    defer(function () { loadPriorityCards(); }, { timeout: 800 });
+  }
+})();
+</script>
+<script>
+(function () {
+  const table = document.getElementById('homeTeamTable');
+  if (!table) return;
+  const qEl = document.getElementById('homeTeamSearch');
+  const stEl = document.getElementById('homeTeamStatus');
+  const escEl = document.getElementById('homeTeamEsc');
+  const teamEl = document.getElementById('homeTeamTeam');
+  const resetBtn = document.getElementById('homeTeamFilterReset');
+  const visibleEl = document.getElementById('homeTeamListVisible');
+  const noMatch = document.getElementById('homeTeamNoMatch');
+
+  function dataRows() {
+    return Array.from(table.querySelectorAll('tbody tr')).filter(
+      (tr) => tr.id !== 'homeTeamNoMatch' && tr.id !== 'homeTeamEmptyRow'
+        && tr.id !== 'homeTeamLoadingRow' && tr.hasAttribute('data-search')
+    );
+  }
+
+  function applyFilters() {
+    const q = (qEl && qEl.value || '').trim().toLowerCase();
+    const st = (stEl && stEl.value) || '';
+    const esc = (escEl && escEl.value) || '';
+    const team = (teamEl && teamEl.value) || '';
+    const rows = dataRows();
+    let shown = 0;
+    rows.forEach((tr) => {
+      const okQ = !q || (tr.getAttribute('data-search') || '').toLowerCase().indexOf(q) !== -1;
+      const okSt = !st || tr.getAttribute('data-status') === st;
+      const okEsc = !esc || tr.getAttribute('data-esc') === esc;
+      const okTeam = !team || tr.getAttribute('data-team') === team;
+      const on = okQ && okSt && okEsc && okTeam;
+      tr.hidden = !on;
+      if (on) shown += 1;
+    });
+    if (visibleEl) visibleEl.textContent = String(shown);
+    if (noMatch) noMatch.hidden = !(rows.length && shown === 0);
+  }
+
+  window.__homeTeamRefreshFilters = applyFilters;
+
+  [qEl, stEl, escEl, teamEl].forEach((el) => {
+    if (!el) return;
+    el.addEventListener('input', applyFilters);
+    el.addEventListener('change', applyFilters);
+  });
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      if (qEl) qEl.value = '';
+      if (stEl) stEl.value = '';
+      if (escEl) escEl.value = '';
+      if (teamEl) teamEl.value = '';
+      applyFilters();
+    });
+  }
+})();
+</script>
+{% elif dashboard %}
+<script>
+(function () {
+  const root = document.getElementById('homeListTabs');
+  if (!root) return;
+
+  // 탭 전환 (일반 사용자 3탭)
+  const tabs = root.querySelectorAll('[data-home-tab]');
+  const panels = root.querySelectorAll('[data-home-panel]');
+  if (tabs.length) {
+    function activate(key) {
+      tabs.forEach((tab) => {
+        const on = tab.getAttribute('data-home-tab') === key;
+        tab.classList.toggle('is-active', on);
+        tab.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      panels.forEach((panel) => {
+        const on = panel.getAttribute('data-home-panel') === key;
+        panel.classList.toggle('is-active', on);
+        panel.hidden = !on;
+      });
+      try { sessionStorage.setItem('home_list_tab', key); } catch (e) { /* ignore */ }
+    }
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => activate(tab.getAttribute('data-home-tab')));
+    });
+    let initial = root.getAttribute('data-default-tab') || 'team';
+    try {
+      const saved = sessionStorage.getItem('home_list_tab');
+      if (saved && root.querySelector('[data-home-tab="' + saved + '"]')) initial = saved;
+    } catch (e) { /* ignore */ }
+    activate(initial);
+  }
+
+  // 팀 AS / 내가 접수한 AS / 내 AS 처리 이력 — 검색·필터
+  function bindListFilters(panel) {
+    const filters = panel.querySelector('[data-home-list-filters]');
+    const table = panel.querySelector('[data-home-list-table]');
+    if (!filters || !table) return;
+    const qEl = filters.querySelector('[data-filter-q]');
+    const stEl = filters.querySelector('[data-filter-status]');
+    const teamEl = filters.querySelector('[data-filter-team]');
+    const resetBtn = filters.querySelector('[data-filter-reset]');
+    const csvLink = filters.querySelector('[data-csv-export]');
+    const visibleEl = panel.querySelector('[data-filter-visible]');
+    const noMatch = table.querySelector('[data-filter-nomatch]');
+    const queueBtns = panel.querySelectorAll('.queue-summary-filter-btn');
+    const statCards = document.querySelector('[data-home-stat-cards]');
+    const todayStr = (statCards && statCards.getAttribute('data-today')) || '';
+    const statBtns = statCards
+      ? Array.from(statCards.querySelectorAll('[data-home-stat-filter]'))
+      : [];
+    let currentQueueFilter = '';
+    let currentStatFilter = '';
+
+    function syncStatButtons() {
+      statBtns.forEach((btn) => {
+        const on = !!currentStatFilter && btn.dataset.homeStatFilter === currentStatFilter;
+        btn.classList.toggle('is-active', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+    }
+
+    function setQueueFilter(filter) {
+      currentQueueFilter = filter || '';
+      if (currentQueueFilter) currentStatFilter = '';
+      queueBtns.forEach((btn) => {
+        const on = !!filter && btn.dataset.queueFilter === filter;
+        btn.classList.toggle('is-active', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      syncStatButtons();
+      applyFilters();
+    }
+
+    function setStatFilter(filter) {
+      currentStatFilter = filter || '';
+      if (currentStatFilter) currentQueueFilter = '';
+      queueBtns.forEach((btn) => {
+        btn.classList.remove('is-active');
+        btn.setAttribute('aria-pressed', 'false');
+      });
+      syncStatButtons();
+      applyFilters();
+    }
+
+    function dataRows() {
+      return Array.from(table.querySelectorAll('tbody tr')).filter(
+        (tr) => tr.hasAttribute('data-search')
+      );
+    }
+
+    function syncCsvHref() {
+      if (!csvLink) return;
+      const kind = csvLink.getAttribute('data-csv-kind') || 'team';
+      const params = new URLSearchParams();
+      params.set('kind', kind);
+      const q = ((qEl && qEl.value) || '').trim();
+      const st = (stEl && stEl.value) || '';
+      const team = (teamEl && teamEl.value) || '';
+      if (q) params.set('q', q);
+      if (st) params.set('status', st);
+      if (team) params.set('team', team);
+      if (currentStatFilter === 'today') params.set('stat', 'today');
+      if (currentStatFilter === 'in-progress') params.set('stat', 'in_progress');
+      csvLink.href = '/api/home/export.csv?' + params.toString();
+    }
+
+    function applyFilters() {
+      const q = ((qEl && qEl.value) || '').trim().toLowerCase();
+      const st = (stEl && stEl.value) || '';
+      const team = (teamEl && teamEl.value) || '';
+      const rows = dataRows();
+      let shown = 0;
+      rows.forEach((tr) => {
+        const okQ = !q || (tr.getAttribute('data-search') || '').toLowerCase().indexOf(q) !== -1;
+        const okSt = !st || tr.getAttribute('data-status') === st;
+        const okTeam = !team || tr.getAttribute('data-team') === team;
+        const okQueue = !currentQueueFilter
+          || (currentQueueFilter === 'team-unassigned-wait' && tr.getAttribute('data-queue-team-wait') === '1')
+          || (currentQueueFilter === 'team-in-progress' && tr.getAttribute('data-queue-team-progress') === '1');
+        const okStat = !currentStatFilter
+          || (currentStatFilter === 'today' && tr.getAttribute('data-receipt-date') === todayStr)
+          || (currentStatFilter === 'in-progress' && tr.getAttribute('data-pending') === '1');
+        const on = okQ && okSt && okTeam && okQueue && okStat;
+        tr.hidden = !on;
+        tr.classList.toggle('is-filter-hidden', !on);
+        if (on) shown += 1;
+      });
+      if (visibleEl) visibleEl.textContent = String(shown);
+      if (noMatch) noMatch.hidden = !(rows.length && shown === 0);
+      syncCsvHref();
+    }
+
+    queueBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const next = currentQueueFilter === btn.dataset.queueFilter ? '' : (btn.dataset.queueFilter || '');
+        setQueueFilter(next);
+        if (next) {
+          table.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      });
+    });
+
+    if (panel.getAttribute('data-home-panel') === 'team') {
+      statBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.homeStatFilter || '';
+          const next = currentStatFilter === key ? '' : key;
+          // 팀 AS 목록 탭으로 이동
+          const tab = root.querySelector('[data-home-tab="team"]');
+          if (tab && !tab.classList.contains('is-active')) tab.click();
+          setStatFilter(next);
+          if (next) {
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            table.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        });
+      });
+      panel.addEventListener('home-stat-filter', (ev) => {
+        const key = (ev.detail && ev.detail.filter) || '';
+        setStatFilter(key);
+      });
+    }
+
+    [qEl, stEl, teamEl].forEach((el) => {
+      if (!el) return;
+      el.addEventListener('input', applyFilters);
+      el.addEventListener('change', applyFilters);
+    });
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => {
+        if (qEl) qEl.value = '';
+        if (stEl) stEl.value = '';
+        if (teamEl) teamEl.value = '';
+        setQueueFilter('');
+        setStatFilter('');
+      });
+    }
+    syncCsvHref();
+  }
+
+  root.querySelectorAll('[data-home-panel]').forEach(bindListFilters);
+})();
+</script>
+{% endif %}
+{% if dashboard and dashboard.is_tech_mgmt %}
+<script>
+(function () {
+  const modal = document.getElementById('reviewModal');
+  const form = document.getElementById('reviewForm');
+  if (!modal || !form) return;
+  const meta = document.getElementById('reviewModalMeta');
+  const flagsEl = document.getElementById('reviewModalFlags');
+  const escSelect = document.getElementById('reviewEscalation');
+  const intHidden = document.getElementById('reviewIntervention');
+
+  function closeReview() {
+    modal.hidden = true;
+    document.body.classList.remove('modal-open');
+  }
+
+  function openReview(card) {
+    if (!card) return;
+    const no = card.dataset.no;
+    form.action = '/tech-monitor/' + encodeURIComponent(no) + '/update';
+    meta.textContent = (no || '') + ' · ' + (card.dataset.team || '') + ' · '
+      + (card.dataset.customer || '') + ' · ' + (card.dataset.equipment || '');
+    flagsEl.textContent = card.dataset.flags
+      ? ('감지 사유: ' + card.dataset.flags)
+      : '';
+    escSelect.value = card.dataset.escalation || 'normal';
+    syncIntervention();
+    modal.hidden = false;
+    document.body.classList.add('modal-open');
+  }
+
+  function syncIntervention() {
+    const esc = escSelect.value;
+    if (esc === 'critical') intHidden.value = 'intervening';
+    else if (esc === 'monitor') intHidden.value = 'watching';
+    else if (esc === 'cleared' || esc === 'closed') intHidden.value = 'resolved';
+    else intHidden.value = 'none';
+  }
+
+  escSelect.addEventListener('change', syncIntervention);
+  document.querySelectorAll('.js-open-review').forEach(btn => {
+    btn.addEventListener('click', () => openReview(btn.closest('.auto-detect-card')));
+  });
+  // 지연 로딩된 카드에도 동일 동작
+  const autoMount = document.getElementById('homeAutoMount');
+  if (autoMount) {
+    autoMount.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('.js-open-review');
+      if (!btn) return;
+      openReview(btn.closest('.auto-detect-card'));
+    });
+  }
+  document.querySelectorAll('[data-close-review]').forEach(el => {
+    el.addEventListener('click', closeReview);
+  });
+})();
+</script>
+{% endif %}
+<script>
+(function () {
+  document.querySelectorAll('.js-transfer-decide').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const decision = btn.dataset.decision || '';
+      const id = btn.dataset.id || '';
+      let note = '';
+      if (decision === 'reject') {
+        note = prompt('거절 사유(선택)') || '';
+      } else if (!confirm('이관 요청을 승인할까요?')) {
+        return;
+      }
+      const fd = new FormData();
+      fd.append('transfer_id', id);
+      fd.append('decision', decision);
+      fd.append('note', note);
+      const res = await fetch('/api/transfer/decide', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) location.reload();
+      else alert(data.error || '처리 실패');
+    });
+  });
+})();
+</script>
+{% endblock %}

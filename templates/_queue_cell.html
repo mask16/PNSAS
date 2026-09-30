@@ -1,0 +1,12 @@
+<td data-label="대기순번" class="queue-cell queue-{{ r.queue_type }}">
+  {% if r.queue_type in ('waiting', 'progress') %}
+  <span class="queue-line">
+    <span class="queue-icon" aria-hidden="true">{% if r.queue_type == 'waiting' %}⏳{% else %}🔧{% endif %}</span>
+    {% if r.queue_label %}<span class="queue-label">{{ r.queue_label }}</span>{% endif %}
+    <span class="queue-rank">{{ r.queue_rank or r.queue_main or r.queue_text }}</span>
+  </span>
+  {% if r.queue_scope %}<span class="queue-scope">({{ r.queue_scope }})</span>{% endif %}
+  {% else %}
+  {{ r.queue_text }}
+  {% endif %}
+</td>

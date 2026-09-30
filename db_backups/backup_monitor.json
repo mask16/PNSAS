@@ -1,0 +1,22 @@
+{
+  "enabled": true,
+  "hour": 2,
+  "minute": 0,
+  "keep_days": 30,
+  "last_run_at": "2026-09-11 11:28:03",
+  "last_success_at": "2026-09-11 11:28:03",
+  "last_error": "",
+  "last_file": "daily/pns_as_daily_20260911.db",
+  "last_size": 1298432,
+  "last_trigger": "auto",
+  "history": [
+    {
+      "at": "2026-09-11 11:28:03",
+      "ok": true,
+      "trigger": "auto",
+      "file": "daily/pns_as_daily_20260911.db",
+      "size": 1298432,
+      "error": ""
+    }
+  ]
+}

@@ -1,0 +1,438 @@
+{% extends "base.html" %}
+
+{% macro org_email_fields(field_id, emails=none) %}
+<div class="form-group org-email-group">
+  <label class="form-label" for="{{ field_id }}-0">알림 메일</label>
+  <div class="org-email-list" data-org-email-list>
+    {% set mail_list = emails if emails else [''] %}
+    {% for mail in mail_list %}
+    <div class="org-email-row">
+      <input type="email" id="{{ field_id }}-{{ loop.index0 }}" name="emails"
+             class="form-input" value="{{ mail }}" placeholder="예: name@company.com">
+      <button type="button" class="btn btn-outline org-email-remove"
+              aria-label="메일 삭제"{% if loop.first and mail_list|length == 1 %} hidden{% endif %}>−</button>
+    </div>
+    {% endfor %}
+  </div>
+  <button type="button" class="btn btn-outline org-email-add">+ 메일 추가</button>
+  <p class="form-hint">해당 계정 알림은 등록된 모든 메일로 일괄 발송됩니다.</p>
+</div>
+{% endmacro %}
+
+{% block title %}계정관리{% endblock %}
+
+{% block content %}
+<div class="page-header admin-page-header">
+  <span class="page-breadcrumb">관리자 전용 화면</span>
+  <div class="admin-page-header-row">
+    <div>
+      <h1 class="page-title page-title-dark">부서 · 인원 · 계정 관리</h1>
+      <p class="page-desc">부서와 인원을 등록하면 로그인 계정이 자동 생성됩니다. (ID=이름 / 기본 PW=1234) 아래 목록에서 비밀번호·사용 여부를 함께 관리합니다.</p>
+    </div>
+    <div class="admin-header-actions">
+      <a href="{{ url_for('admin_backup') }}" class="btn btn-primary">DB백업</a>
+      <a href="{{ url_for('admin_backup_excel') }}" class="btn btn-outline">엑셀 내보내기</a>
+    </div>
+  </div>
+</div>
+
+<section class="admin-master-section" id="orgMaster">
+  <div class="admin-list-heading">
+    <div>
+      <h2>부서 · 인원 · 로그인 계정</h2>
+      <p>부서 아래 인원과 연결된 로그인 계정을 한 목록에서 관리합니다. 이메일 알림은 인원별 이메일과 서버 <code>mail.env</code> 설정이 필요합니다.</p>
+    </div>
+  </div>
+
+  <div class="org-manage-layout">
+    <article class="form-card org-create-card">
+      <div class="form-card-header">부서 추가</div>
+      <form action="{{ url_for('admin_org_department_create') }}" method="post" class="form-card-body org-create-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="form-group">
+          <label class="form-label" for="deptName">부서명</label>
+          <input type="text" id="deptName" name="name" class="form-input"
+                 placeholder="예: 내수영업팀" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="deptNote">설명 (선택)</label>
+          <input type="text" id="deptNote" name="note" class="form-input"
+                 placeholder="예: 접수 전담 · AS는 내수영업팀이 처리">
+        </div>
+        <button type="submit" class="btn btn-primary">부서 추가</button>
+      </form>
+    </article>
+
+    <article class="form-card org-create-card">
+      <div class="form-card-header">인원 추가</div>
+      <form action="{{ url_for('admin_org_person_create') }}" method="post" class="form-card-body org-create-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="form-group">
+          <label class="form-label" for="personName">이름 (로그인 ID)</label>
+          <input type="text" id="personName" name="name" class="form-input"
+                 placeholder="예: 최영호" required>
+        </div>
+        <div class="org-create-row">
+          <div class="form-group">
+            <label class="form-label" for="personTitle">직책</label>
+            <input type="text" id="personTitle" name="title" class="form-input"
+                   placeholder="예: 팀장">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="personRole">역할 표기</label>
+            <input type="text" id="personRole" name="role_note" class="form-input"
+                   placeholder="예: 접수·AS">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="personTeam">소속 부서</label>
+          <select id="personTeam" name="team_code" class="form-select" required>
+            {% for team in master_teams %}
+              <option value="{{ team.id }}">{{ team.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        {{ org_email_fields('personEmail') }}
+        <div class="org-role-checks">
+          <label class="admin-active-toggle">
+            <input type="checkbox" name="can_receipt" value="1" checked>
+            <span>접수 담당</span>
+          </label>
+          <label class="admin-active-toggle">
+            <input type="checkbox" name="can_as" value="1" checked>
+            <span>AS 담당</span>
+          </label>
+        </div>
+        <p class="form-hint">저장 시 로그인 계정이 자동 생성됩니다. (PW=1234)</p>
+        <button type="submit" class="btn btn-primary">인원 추가</button>
+      </form>
+    </article>
+  </div>
+
+  <div class="admin-list-heading">
+    <h2>부서 · 인원 목록</h2>
+    <div class="org-list-heading-actions">
+      <span>부서 {{ org_tree|length }}개 · 인원 {{ org_people_count }}명 · 계정 {{ account_count }}개</span>
+      <button type="button" class="btn btn-outline org-toggle-all" id="orgExpandAll">전체 펼치기</button>
+      <button type="button" class="btn btn-outline org-toggle-all" id="orgCollapseAll">전체 접기</button>
+    </div>
+  </div>
+
+  <div class="admin-user-columns org-list-columns" aria-hidden="true">
+    <span>부서 · 인원 · 로그인 ID</span>
+    <span>역할 · 계정 상태</span>
+    <span>소속 · 분류</span>
+    <span>관리</span>
+  </div>
+  <div class="admin-user-list org-list" id="orgAccordionList">
+    {% if not org_tree %}
+      <p class="org-empty">등록된 부서가 없습니다.</p>
+    {% endif %}
+
+    {% for dept in org_tree %}
+    <details class="admin-user-card org-dept-card org-accordion-item {% if dept.is_system %}org-system-dept{% endif %}">
+      <summary class="admin-user-summary">
+        <div class="admin-user-identity">
+          <span class="admin-user-avatar org-dept-avatar">{{ dept.name[:1] }}</span>
+          <span>
+            <strong>{{ dept.name }}</strong>
+            <small class="admin-user-id">{% if dept.note %}{{ dept.note }}{% else %}부서{% endif %}</small>
+          </span>
+        </div>
+        <div class="admin-user-badges">
+          {% if dept.is_system %}
+          <span class="admin-role-badge role-admin">관리</span>
+          {% else %}
+          <span class="admin-role-badge role-admin">부서</span>
+          {% endif %}
+          <span class="admin-state-badge active">{{ dept.people|length }}명</span>
+        </div>
+        <div class="admin-user-dates">
+          <span>소속 {{ dept.people|length }}명</span>
+          <span>클릭하여 펼치기</span>
+        </div>
+        <span class="admin-user-settings org-accordion-toggle">
+          <span class="org-toggle-closed">펼치기</span>
+          <span class="org-toggle-opened">접기</span>
+          <span aria-hidden="true">⌄</span>
+        </span>
+      </summary>
+
+      <div class="admin-user-detail org-dept-panel">
+        {% if not dept.is_unassigned and not dept.is_system and dept.db_id %}
+        <div class="org-dept-edit-row">
+          <form action="{{ url_for('admin_org_department_update', item_id=dept.db_id) }}"
+                method="post" class="org-dept-save-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <label class="form-label" for="dept-name-{{ dept.db_id }}">부서명</label>
+            <input type="text" id="dept-name-{{ dept.db_id }}" name="name" class="form-input"
+                   value="{{ dept.name }}" required>
+            <button type="submit" class="btn btn-primary">부서 저장</button>
+          </form>
+          <form action="{{ url_for('admin_org_department_delete', item_id=dept.db_id) }}"
+                method="post" class="org-dept-delete-form"
+                onsubmit="return confirm({{ ((dept.name ~ ' 부서를 삭제하시겠습니까?\\n소속 인원 ' ~ (dept.people|length) ~ '명은 삭제되지 않고 미배정으로 유지됩니다.') )|tojson }});">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <button type="submit" class="btn btn-outline org-dept-delete-btn">부서 삭제</button>
+          </form>
+        </div>
+        {% endif %}
+
+        <div class="org-people-accordion">
+          <div class="org-people-heading">
+            {% if dept.is_system %}시스템 계정{% elif dept.is_unassigned %}미배정 · 미연결{% else %}소속 인원{% endif %}
+          </div>
+          {% for person in dept.people %}
+          <details class="admin-user-card org-person-card {% if not person.account_active and person.has_login %}is-inactive{% endif %}">
+            <summary class="admin-user-summary">
+              <div class="admin-user-identity">
+                <span class="admin-user-avatar">{{ person.name[:1] }}</span>
+                <span>
+                  <strong>{{ person.name }}{% if person.title %} {{ person.title }}{% endif %}</strong>
+                  <small class="admin-user-id">
+                    {% if person.has_login %}
+                      ID: {{ person.login_username }}
+                    {% elif person.is_system_account %}
+                      ID: {{ person.login_username }}
+                    {% else %}
+                      로그인 미등록
+                    {% endif %}
+                  </small>
+                </span>
+              </div>
+              <div class="admin-user-badges">
+                {% if person.account_role == 'admin' %}
+                  <span class="admin-role-badge role-admin">관리자</span>
+                {% elif person.can_receipt %}
+                  <span class="admin-state-badge active">접수</span>
+                {% endif %}
+                {% if person.can_as %}
+                  <span class="admin-role-badge role-admin">AS</span>
+                {% endif %}
+                {% if person.has_login %}
+                  <span class="admin-state-badge {{ 'active' if person.account_active else 'inactive' }}">
+                    {{ '사용중' if person.account_active else '비활성' }}
+                  </span>
+                {% elif not person.is_system_account %}
+                  <span class="admin-state-badge inactive">미등록</span>
+                {% endif %}
+              </div>
+              <div class="admin-user-dates">
+                {% if person.emails %}
+                  <span>메일 {{ person.emails|length }}개</span>
+                {% endif %}
+                {% if person.account_created_at %}
+                  <span>등록 {{ person.account_created_at[:10] }}</span>
+                {% endif %}
+                {% if person.account_updated_at %}
+                  <span>수정 {{ person.account_updated_at[:10] }}</span>
+                {% endif %}
+              </div>
+              <span class="admin-user-settings org-accordion-toggle">
+                <span class="org-toggle-closed">펼치기</span>
+                <span class="org-toggle-opened">접기</span>
+                <span aria-hidden="true">⌄</span>
+              </span>
+            </summary>
+
+            <div class="admin-user-detail">
+              {% if person.is_system_account and person.user_id %}
+              <form action="{{ url_for('admin_user_update', user_id=person.user_id) }}"
+                    method="post" class="admin-user-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <p class="form-hint">조직 인원과 연결되지 않은 계정입니다. 관리자·미연결 계정은 여기서 직접 수정합니다.</p>
+                <div class="admin-edit-grid">
+                  <div class="form-group">
+                    <label class="form-label" for="sys-username-{{ person.user_id }}">로그인 ID</label>
+                    <input type="text" id="sys-username-{{ person.user_id }}" name="username"
+                           class="form-input" value="{{ person.login_username }}" minlength="3" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="sys-name-{{ person.user_id }}">표시 이름</label>
+                    <input type="text" id="sys-name-{{ person.user_id }}" name="display_name"
+                           class="form-input" value="{{ person.name }}" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="sys-role-{{ person.user_id }}">권한</label>
+                    <select id="sys-role-{{ person.user_id }}" name="role" class="form-select"
+                            {% if person.login_username == current_username %}disabled{% endif %}>
+                      <option value="staff" {% if person.account_role == 'staff' %}selected{% endif %}>담당자</option>
+                      <option value="admin" {% if person.account_role == 'admin' %}selected{% endif %}>관리자</option>
+                    </select>
+                    {% if person.login_username == current_username %}
+                      <input type="hidden" name="role" value="admin">
+                    {% endif %}
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="sys-password-{{ person.user_id }}">새 비밀번호</label>
+                    <input type="password" id="sys-password-{{ person.user_id }}" name="password"
+                           class="form-input" minlength="4" autocomplete="new-password"
+                           placeholder="변경할 때만 입력">
+                  </div>
+                </div>
+                <div class="admin-user-actions">
+                  <label class="admin-active-toggle">
+                    <input type="checkbox" name="active" value="1"
+                           {% if person.account_active %}checked{% endif %}
+                           {% if person.login_username == current_username %}disabled{% endif %}>
+                    <span>계정 사용</span>
+                  </label>
+                  {% if person.login_username == current_username %}
+                    <input type="hidden" name="active" value="1">
+                    <span class="admin-self-note">현재 로그인 계정</span>
+                  {% endif %}
+                  <button type="submit" class="btn btn-primary">변경 저장</button>
+                </div>
+              </form>
+              {% if person.login_username != current_username %}
+              <form action="{{ url_for('admin_user_delete', user_id=person.user_id) }}" method="post"
+                    class="admin-delete-form"
+                    onsubmit="return confirm('{{ person.login_username }} 계정을 삭제하시겠습니까?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn-admin-delete">계정 삭제</button>
+              </form>
+              {% endif %}
+
+              {% elif person.db_id %}
+              <form action="{{ url_for('admin_org_person_update', item_id=person.db_id) }}"
+                    method="post" class="admin-user-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <div class="admin-edit-grid">
+                  <div class="form-group">
+                    <label class="form-label" for="person-name-{{ person.db_id }}">이름 (로그인 ID)</label>
+                    <input type="text" id="person-name-{{ person.db_id }}" name="name" class="form-input"
+                           value="{{ person.name }}" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="person-title-{{ person.db_id }}">직책</label>
+                    <input type="text" id="person-title-{{ person.db_id }}" name="title" class="form-input"
+                           value="{{ person.title }}" placeholder="예: 팀장">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="person-role-{{ person.db_id }}">역할 표기</label>
+                    <input type="text" id="person-role-{{ person.db_id }}" name="role_note" class="form-input"
+                           value="{{ person.role_note }}" placeholder="예: 접수·AS">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" for="person-team-{{ person.db_id }}">소속 부서</label>
+                    <select id="person-team-{{ person.db_id }}" name="team_code" class="form-select" required>
+                      {% for team in master_teams %}
+                        <option value="{{ team.id }}" {% if team.id == person.team_code %}selected{% endif %}>
+                          {{ team.label }}
+                        </option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  {{ org_email_fields('person-email-' ~ person.db_id, person.emails if person.emails else ['']) }}
+                  <div class="form-group">
+                    <label class="form-label" for="person-password-{{ person.db_id }}">새 비밀번호</label>
+                    <input type="password" id="person-password-{{ person.db_id }}" name="password"
+                           class="form-input" minlength="4" autocomplete="new-password"
+                           placeholder="변경할 때만 입력">
+                  </div>
+                </div>
+                <div class="admin-user-actions">
+                  <label class="admin-active-toggle">
+                    <input type="checkbox" name="can_receipt" value="1"
+                           {% if person.can_receipt %}checked{% endif %}>
+                    <span>접수 담당</span>
+                  </label>
+                  <label class="admin-active-toggle">
+                    <input type="checkbox" name="can_as" value="1"
+                           {% if person.can_as %}checked{% endif %}>
+                    <span>AS 담당</span>
+                  </label>
+                  {% if person.has_login and person.account_role != 'admin' %}
+                  <label class="admin-active-toggle">
+                    <input type="checkbox" name="account_active" value="1"
+                           {% if person.account_active %}checked{% endif %}>
+                    <span>로그인 사용</span>
+                  </label>
+                  {% elif not person.has_login %}
+                  <span class="form-hint">저장하면 로그인 계정이 생성됩니다.</span>
+                  {% endif %}
+                  <button type="submit" class="btn btn-primary">변경 저장</button>
+                </div>
+              </form>
+              <form action="{{ url_for('admin_org_person_delete', item_id=person.db_id) }}"
+                    method="post" class="admin-delete-form"
+                    onsubmit="return confirm('{{ person.display_name }} 인원을 삭제하시겠습니까?\\n연결된 로그인 계정도 함께 삭제됩니다.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <button type="submit" class="btn-admin-delete">인원 · 계정 삭제</button>
+              </form>
+              {% endif %}
+            </div>
+          </details>
+          {% else %}
+          <div class="org-empty-row">소속 인원이 없습니다.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+</section>
+
+<p class="admin-security-note">
+  보안을 위해 기존 비밀번호는 화면에 표시되지 않습니다. 담당자 계정은 「인원 추가」로 등록하고, 관리자·미연결 계정만 시스템 관리자/미배정에서 직접 수정하세요.
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const orgList = document.getElementById('orgAccordionList');
+  const expandAllBtn = document.getElementById('orgExpandAll');
+  const collapseAllBtn = document.getElementById('orgCollapseAll');
+  if (orgList && expandAllBtn && collapseAllBtn) {
+    const deptItems = () => orgList.querySelectorAll('.org-accordion-item');
+    expandAllBtn.addEventListener('click', () => {
+      deptItems().forEach(item => { item.open = true; });
+    });
+    collapseAllBtn.addEventListener('click', () => {
+      deptItems().forEach(item => { item.open = false; });
+      orgList.querySelectorAll('.org-person-card').forEach(item => { item.open = false; });
+    });
+  }
+
+  function syncOrgEmailRemoveButtons(listEl) {
+    const rows = listEl.querySelectorAll('.org-email-row');
+    rows.forEach((row, index) => {
+      const removeBtn = row.querySelector('.org-email-remove');
+      if (!removeBtn) return;
+      removeBtn.hidden = rows.length <= 1;
+    });
+  }
+
+  function bindOrgEmailList(listEl) {
+    if (!listEl || listEl.dataset.orgEmailBound === '1') return;
+    listEl.dataset.orgEmailBound = '1';
+    const group = listEl.closest('.org-email-group');
+    const addBtn = group && group.querySelector('.org-email-add');
+    if (addBtn) {
+      addBtn.addEventListener('click', () => {
+        const firstRow = listEl.querySelector('.org-email-row');
+        if (!firstRow) return;
+        const clone = firstRow.cloneNode(true);
+        const input = clone.querySelector('input[name="emails"]');
+        if (input) {
+          input.value = '';
+          input.removeAttribute('id');
+        }
+        listEl.appendChild(clone);
+        syncOrgEmailRemoveButtons(listEl);
+      });
+    }
+    listEl.addEventListener('click', (event) => {
+      const removeBtn = event.target.closest('.org-email-remove');
+      if (!removeBtn || !listEl.contains(removeBtn)) return;
+      const rows = listEl.querySelectorAll('.org-email-row');
+      if (rows.length <= 1) return;
+      removeBtn.closest('.org-email-row').remove();
+      syncOrgEmailRemoveButtons(listEl);
+    });
+    syncOrgEmailRemoveButtons(listEl);
+  }
+
+  document.querySelectorAll('[data-org-email-list]').forEach(bindOrgEmailList);
+</script>
+{% endblock %}

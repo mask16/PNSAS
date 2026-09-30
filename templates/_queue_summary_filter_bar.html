@@ -1,0 +1,19 @@
+<div class="queue-summary-bar{% if queue_summary.team_unassigned_wait >= 3 %} is-team-warn{% endif %}" role="group" aria-label="팀 대기열 빠른 필터">
+  <button type="button"
+          class="queue-summary-badge queue-badge-wait queue-summary-filter-btn"
+          data-queue-filter="team-unassigned-wait"
+          aria-pressed="false"
+          aria-label="팀 미지정 대기 {{ queue_summary.team_unassigned_wait }}건 보기">
+    <span class="queue-summary-icon" aria-hidden="true">⏳</span>
+    팀 미지정 대기 {{ queue_summary.team_unassigned_wait }}건
+  </button>
+  <span class="queue-summary-sep" aria-hidden="true">·</span>
+  <button type="button"
+          class="queue-summary-badge queue-badge-progress queue-summary-filter-btn"
+          data-queue-filter="team-in-progress"
+          aria-pressed="false"
+          aria-label="진행중 {{ queue_summary.team_in_progress }}건 보기">
+    <span class="queue-summary-icon" aria-hidden="true">🔧</span>
+    진행중 {{ queue_summary.team_in_progress }}건
+  </button>
+</div>

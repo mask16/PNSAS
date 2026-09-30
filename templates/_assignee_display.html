@@ -1,0 +1,6 @@
+<span class="assignee-display{% if r.as_unassigned %} text-muted{% endif %}">
+  <span class="assignee-display-main">{{ r.assignee_main or r.assignee_display or r.as_display or '미지정' }}</span>
+  {% if r.assignee_sub %}
+  <span class="assignee-display-sub">{{ r.assignee_sub }}</span>
+  {% endif %}
+</span>

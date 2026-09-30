@@ -1,0 +1,545 @@
+{% extends "base.html" %}
+
+{% block title %}AS보고서{% endblock %}
+
+{% block content %}
+<div class="report-page">
+  <div class="report-page-top">
+    <div class="page-header report-page-header">
+      <span class="page-breadcrumb">전체 건 조회 · 진행 중인 건도 확인 가능</span>
+      <h1 class="page-title page-title-dark">AS 보고서 조회 · 출력</h1>
+      <p class="page-desc">고객명으로 검색하거나 접수번호를 선택하면 보고서가 자동 완성됩니다.</p>
+    </div>
+    <a href="{{ return_url }}" class="btn btn-primary btn-back">← {{ return_label }}</a>
+  </div>
+
+  <div class="report-layout">
+    <div class="report-document" id="reportDocument">
+      {% if report %}
+      {% include "report_body.html" %}
+      {% else %}
+      <div class="report-empty">
+        <p>접수 건이 없습니다. 영업접수에서 먼저 접수를 등록해 주세요.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <aside class="report-sidebar">
+      <div class="sidebar-panel">
+        <label class="sidebar-label" for="customerSearch">고객명 검색</label>
+        <input type="search" id="customerSearch" class="form-input sidebar-search"
+               value="{{ customer_q or '' }}"
+               placeholder="고객명 일부 입력 (예: 해성)"
+               autocomplete="off">
+        <p class="sidebar-hint" id="customerSearchHint" hidden></p>
+
+        <label class="sidebar-label" for="receiptSelect">접수번호 선택</label>
+        <select id="receiptSelect" class="form-select sidebar-select">
+          {% for opt in receipt_options %}
+            <option value="{{ opt.receipt_no }}"
+                    data-customer="{{ opt.customer_name }}"
+                    {% if opt.receipt_no == default_receipt_no %}selected{% endif %}>
+              {{ opt.label }}
+            </option>
+          {% endfor %}
+        </select>
+
+        <button type="button" class="btn btn-primary btn-block" id="loadReportBtn">보고서 불러오기</button>
+        <button type="button" class="btn btn-outline btn-block" id="pdfBtn">PDF 다운로드</button>
+        <button type="button" class="btn btn-outline btn-block" id="printBtn">인쇄</button>
+      </div>
+
+      <div class="sidebar-panel support-reply-panel" id="supportReplyPanel" hidden>
+        <h3 class="sidebar-label">지원부서 추가 회신</h3>
+        <p class="sidebar-hint" id="supportReplyHint">완료된 건에도 품질팀·기술부 회신을 남길 수 있습니다. AS내용·수정이력은 변경되지 않습니다.</p>
+        <div id="reportSupportStatusRow" class="support-feedback-badges" hidden></div>
+        <label class="sidebar-label" for="supportReplyKind">부서</label>
+        <select id="supportReplyKind" class="form-select">
+          <option value="quality">품질팀</option>
+          <option value="tech">기술부</option>
+        </select>
+        <label class="sidebar-label" for="supportReplyText">검토 의견</label>
+        <textarea id="supportReplyText" class="form-input" rows="4" placeholder="회신 내용을 입력하세요" style="min-height:88px"></textarea>
+        <button type="button" class="btn btn-primary btn-block" id="supportReplyBtn" style="min-height:44px">회신완료</button>
+        <button type="button" class="btn btn-outline btn-block" id="supportRejectBtn" style="min-height:44px">품질팀으로 반려</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="photo-lightbox" id="photoLightbox" hidden role="dialog" aria-modal="true" aria-label="첨부 사진 크게 보기">
+  <button type="button" class="photo-lightbox-close" id="photoLightboxClose" aria-label="닫기">&times;</button>
+  <img id="photoLightboxImage" src="" alt="확대된 첨부 사진">
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const receiptSelect = document.getElementById('receiptSelect');
+  const reportDocument = document.getElementById('reportDocument');
+  const loadBtn = document.getElementById('loadReportBtn');
+  const UI_LABELS = {{ ui_labels | tojson }};
+  const IS_TECH_MGMT = {{ 'true' if current_user_is_tech_mgmt else 'false' }};
+  const IS_QUALITY_SUPPORT = {{ 'true' if current_user_is_quality_support else 'false' }};
+  const IS_TECH_SUPPORT = {{ 'true' if current_user_is_tech_support else 'false' }};
+  const supportReplyPanel = document.getElementById('supportReplyPanel');
+  const SUPPORT_STATUS_LABELS = {
+    waiting: '대기중', confirmed: '확인함', replied: '회신완료', rejected: '반려됨'
+  };
+  if (supportReplyPanel && (IS_QUALITY_SUPPORT || IS_TECH_SUPPORT)) {
+    supportReplyPanel.hidden = false;
+    const kindSel = document.getElementById('supportReplyKind');
+    if (kindSel) {
+      if (IS_QUALITY_SUPPORT && !IS_TECH_SUPPORT) kindSel.value = 'quality';
+      if (IS_TECH_SUPPORT && !IS_QUALITY_SUPPORT) kindSel.value = 'tech';
+    }
+    const rejectBtn = document.getElementById('supportRejectBtn');
+    if (rejectBtn) rejectBtn.hidden = !IS_TECH_SUPPORT;
+  }
+
+  function syncReportSupportPanel(d) {
+    if (!supportReplyPanel || !(IS_QUALITY_SUPPORT || IS_TECH_SUPPORT)) return;
+    const kind = IS_QUALITY_SUPPORT && !IS_TECH_SUPPORT
+      ? 'quality'
+      : (IS_TECH_SUPPORT && !IS_QUALITY_SUPPORT ? 'tech' : (document.getElementById('supportReplyKind')?.value || 'quality'));
+    const shared = kind === 'quality' ? !!(d && d.support_quality) : !!(d && d.support_tech);
+    const entry = ((d && d.support_feedback) || {})[kind] || {};
+    const status = entry.status || (shared ? 'waiting' : '');
+    const statusRow = document.getElementById('reportSupportStatusRow');
+    const hint = document.getElementById('supportReplyHint');
+    const replyBox = document.getElementById('supportReplyText');
+    const replyBtn = document.getElementById('supportReplyBtn');
+    const rejectBtn = document.getElementById('supportRejectBtn');
+    const completed = !!(d && d.status === 'completed');
+    if (hint) {
+      hint.textContent = completed
+        ? '완료 건 회신: AS내용·수정이력은 변경되지 않습니다. 요청자에게 「완료 건 회신」 알림이 갑니다.'
+        : '지원요청 건에 검토 의견을 남길 수 있습니다. AS내용·수정이력은 변경되지 않습니다.';
+    }
+    if (statusRow) {
+      if (shared || status) {
+        let html = `<span class="support-feedback-item"><strong>${kind === 'quality' ? '품질팀' : ((UI_LABELS && UI_LABELS.support_tech) || '기술부')}</strong> `;
+        html += `<span class="support-badge status-${status || 'waiting'}">${SUPPORT_STATUS_LABELS[status] || status || '대기중'}</span>`;
+        if (completed) html += ` <span class="support-badge">AS완료</span>`;
+        html += `</span>`;
+        if (entry.reopen_note) html += `<div class="support-feedback-note">${entry.reopen_note}</div>`;
+        if (entry.reply && (status === 'replied' || status === 'rejected')) {
+          html += `<div class="support-feedback-note">회신: ${entry.reply}</div>`;
+        }
+        statusRow.innerHTML = html;
+        statusRow.hidden = false;
+      } else {
+        statusRow.innerHTML = '';
+        statusRow.hidden = true;
+      }
+    }
+    const closed = status === 'replied' || status === 'rejected';
+    const canAct = shared && !closed;
+    if (replyBox) {
+      replyBox.value = (!closed && entry.reply) ? entry.reply : (closed ? (entry.reply || '') : '');
+      replyBox.disabled = closed || !shared;
+    }
+    if (replyBtn) {
+      replyBtn.hidden = !canAct;
+      replyBtn.textContent = completed ? '회신완료 (완료 건)' : '회신완료';
+    }
+    if (rejectBtn) {
+      rejectBtn.hidden = !IS_TECH_SUPPORT || !canAct || kind !== 'tech';
+    }
+  }
+
+  document.getElementById('supportReplyBtn')?.addEventListener('click', async () => {
+    const no = receiptSelect?.value;
+    const reply = (document.getElementById('supportReplyText')?.value || '').trim();
+    const kind = document.getElementById('supportReplyKind')?.value || 'quality';
+    if (!no) { alert('접수번호를 선택하세요.'); return; }
+    if (!reply) { alert('회신 내용을 입력하세요.'); return; }
+    const fd = new FormData();
+    fd.append('receipt_no', no);
+    fd.append('kind', kind);
+    fd.append('reply', reply);
+    const res = await fetch('/api/support/reply', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      alert(data.completed_case ? '완료 건 회신을 저장했습니다.' : '회신완료 처리했습니다.');
+      document.getElementById('supportReplyText').value = '';
+      if (typeof loadReport === 'function') loadReport();
+    } else alert(data.error || '회신 실패');
+  });
+
+  document.getElementById('supportRejectBtn')?.addEventListener('click', async () => {
+    const no = receiptSelect?.value;
+    if (!no) { alert('접수번호를 선택하세요.'); return; }
+    const note = (document.getElementById('supportReplyText')?.value || '').trim()
+      || (prompt('품질팀 반려 사유') || '').trim();
+    if (!note) { alert('반려 사유를 입력해 주세요.'); return; }
+    const fd = new FormData();
+    fd.append('receipt_no', no);
+    fd.append('note', note);
+    const res = await fetch('/api/support/reject-to-quality', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      alert('품질팀으로 반려했습니다.');
+      document.getElementById('supportReplyText').value = '';
+      if (typeof loadReport === 'function') loadReport();
+    } else alert(data.error || '반려 실패');
+  });
+
+  function supportFeedbackSectionHtml(d) {
+    const fb = d.support_feedback || {};
+    const labels = d.support_status_labels || SUPPORT_STATUS_LABELS;
+    const chunks = [];
+    function add(kind, title, shared) {
+      const e = fb[kind] || {};
+      if (!shared && !e.status) return;
+      const st = e.status || (shared ? 'waiting' : '');
+      if (!st) return;
+      let html = `<div class="support-feedback-item"><strong>${title}</strong> `;
+      html += `<span class="support-badge status-${st}">${labels[st] || st}</span>`;
+      if (e.urgent) html += ` <span class="support-badge is-urgent">🚨 긴급직행</span>`;
+      html += `</div>`;
+      if (e.reopen_note) html += `<div class="support-feedback-note">${e.reopen_note}</div>`;
+      if (e.reply && (st === 'replied' || st === 'rejected')) {
+        html += `<div class="support-feedback-note">회신: ${e.reply}</div>`;
+      }
+      chunks.push(html);
+    }
+    add('quality', '품질팀', d.support_quality);
+    add('tech', (UI_LABELS && UI_LABELS.support_tech) || '기술부', d.support_tech);
+    return chunks.length
+      ? `<div class="support-feedback-badges report-support-badges">${chunks.join('')}</div>`
+      : '';
+  }
+
+  function statusClass(status) {
+    return { received: 'status-received', in_progress: 'status-progress', completed: 'status-completed' }[status] || '';
+  }
+
+  function chargeClass(type) {
+    return type === 'free' ? 'charge-free' : 'charge-paid';
+  }
+
+  function fmt(n) {
+    return Number(n).toLocaleString('ko-KR');
+  }
+
+  const PHOTO_TAG_GROUPS = [
+    { key: 'customer', label: '고객 전달' },
+    { key: 'before', label: '수리 전' },
+    { key: 'after', label: '수리 후' },
+    { key: 'parts', label: UI_LABELS.report_parts || '교체 부품' },
+  ];
+
+  function photoButtonHtml(src, label) {
+    return `
+      <button type="button" class="report-photo photo-zoom-trigger" data-src="${src}" aria-label="${label} 사진 크게 보기">
+        <img src="${src}" alt="${label}">
+        <span class="photo-zoom-label">크게 보기</span>
+        <span class="report-photo-tag">${label}</span>
+      </button>`;
+  }
+
+  function renderPhotosHtml(d) {
+    const items = (d.photo_items && d.photo_items.length)
+      ? d.photo_items.map(p => ({
+          url: typeof p === 'string' ? p : (p.url || ''),
+          tag: typeof p === 'string' ? '' : (p.tag || ''),
+        })).filter(p => p.url)
+      : (d.photos || []).map(url => ({ url, tag: '' }));
+
+    if (!items.length) {
+      return '<div class="report-photo-empty"><span>첨부 사진 없음</span></div>';
+    }
+
+    const known = new Set(PHOTO_TAG_GROUPS.map(g => g.key));
+    const sections = PHOTO_TAG_GROUPS.map(group => {
+      const groupItems = items.filter(p => p.tag === group.key);
+      if (!groupItems.length) return '';
+      return `
+        <div class="report-photo-group">
+          <div class="report-photo-group-title">${group.label}
+            <span class="report-photo-group-count">${groupItems.length}장</span>
+          </div>
+          <div class="report-photos">
+            ${groupItems.map(p => photoButtonHtml(p.url, group.label)).join('')}
+          </div>
+        </div>`;
+    }).join('');
+
+    const others = items.filter(p => !known.has(p.tag));
+    const otherHtml = others.length
+      ? `
+        <div class="report-photo-group">
+          <div class="report-photo-group-title">기타 사진
+            <span class="report-photo-group-count">${others.length}장</span>
+          </div>
+          <div class="report-photos">
+            ${others.map(p => photoButtonHtml(p.url, '사진')).join('')}
+          </div>
+        </div>`
+      : '';
+
+    return (sections + otherHtml) || '<div class="report-photo-empty"><span>첨부 사진 없음</span></div>';
+  }
+
+  function renderReport(d) {
+    const partsRows = d.parts.length
+      ? d.parts.map(p => `
+          <tr>
+            <td>${p.name}</td>
+            <td>${p.spec || '—'}</td>
+            <td>${p.qty}</td>
+            <td>${fmt(p.unit_price)}원</td>
+            <td>${fmt(p.subtotal)}원</td>
+          </tr>`).join('')
+      : '<tr><td colspan="5" class="text-muted">등록된 항목 없음</td></tr>';
+
+    const photosHtml = renderPhotosHtml(d);
+
+    reportDocument.innerHTML = `
+      <div class="report-paper">
+        <h2 class="report-main-title">${UI_LABELS.report_title}</h2>
+
+        <div class="report-meta-bar">
+          <div class="report-meta-item">
+            <span class="report-meta-label">문서번호</span>
+            <span class="report-meta-value report-doc-no">${d.receipt_no}</span>
+          </div>
+          <div class="report-meta-item">
+            <span class="report-meta-label">작성일자</span>
+            <span class="report-meta-value">${d.report_date}</span>
+          </div>
+          <div class="report-meta-item">
+            <span class="report-meta-label">수리유형</span>
+            <span class="charge-badge ${chargeClass(d.charge_type)}">${d.charge_label}</span>
+          </div>
+          <div class="report-meta-item">
+            <span class="report-meta-label">AS 상태</span>
+            <span class="status-badge ${statusClass(d.status)}">${d.status_label}</span>
+          </div>
+        </div>
+
+        <div class="report-section">
+          <div class="report-section-header">고객 정보</div>
+          <div class="report-info-grid">
+            <div class="report-info-cell"><span class="report-info-label">고객사명</span><span>${d.customer_name}</span></div>
+            <div class="report-info-cell"><span class="report-info-label">담당자</span><span>${d.customer_contact}</span></div>
+            <div class="report-info-cell"><span class="report-info-label">연락처</span><span>${d.phone}</span></div>
+            <div class="report-info-cell"><span class="report-info-label">${UI_LABELS.product_field}</span><span>${d.equipment_name}${d.spec ? ' / ' + d.spec : ''}${d.lot ? ' / ' + d.lot : ''}</span></div>
+            <div class="report-info-cell"><span class="report-info-label">${UI_LABELS.report_serial}</span><span>${d.serial_no}</span></div>
+            <div class="report-info-cell"><span class="report-info-label">재수리 여부</span><span>${d.re_repair}</span></div>
+            <div class="report-info-cell"><span class="report-info-label">접수 담당자</span><span>${d.receipt_staff_name}</span></div>
+            <div class="report-info-cell"><span class="report-info-label">AS 담당자</span><span>${d.as_technician}</span></div>
+            <div class="report-info-cell"><span class="report-info-label">최초 출하일/워런티</span><span>${d.ship_warranty}</span></div>
+            <div class="report-info-cell"><span class="report-info-label">점검날짜</span><span>${d.inspection_date}</span></div>
+            <div class="report-info-cell"><span class="report-info-label">소속</span><span>${d.affiliation}</span></div>
+            <div class="report-info-cell"><span class="report-info-label">처리위치/출고일자</span><span>${d.process_location} / ${d.ship_out_date}</span></div>
+          </div>
+        </div>
+
+        <div class="report-section">
+          <div class="report-section-header">증상 / 점검결과</div>
+          <div class="report-text-box">${d.symptom_text}</div>
+        </div>
+
+        <div class="report-section">
+          <div class="report-section-header">${UI_LABELS.report_repair}</div>
+          <div class="report-text-box">${d.repair_content}</div>
+        </div>
+
+        <div class="report-section">
+          <div class="report-section-header">상세 점검 및 작업내용</div>
+          <div class="report-text-box report-text-box-lg">${d.detailed_work}</div>
+        </div>
+
+        <div class="report-section">
+          <div class="report-section-header">${UI_LABELS.report_parts}</div>
+          <table class="report-parts-table">
+            <thead>
+              <tr><th>${UI_LABELS.part_name}</th><th>규격</th><th>${UI_LABELS.part_qty}</th><th>단가</th><th>소계</th></tr>
+            </thead>
+            <tbody>${partsRows}</tbody>
+            <tfoot>
+              <tr><td colspan="5" class="parts-total">${UI_LABELS.parts_total} ${fmt(d.parts_total)}원</td></tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div class="report-section">
+          <div class="report-section-header">청구 비용</div>
+          <div class="report-billing">
+            <span class="charge-badge ${chargeClass(d.charge_type)}">${d.charge_label}</span>
+            <span class="report-billing-note">${d.billing_note}</span>
+          </div>
+        </div>
+
+        <div class="report-section">
+          <div class="report-section-header">지원 요청 이력</div>
+          ${supportFeedbackSectionHtml(d)}
+          <div class="report-text-box">${d.support_history}</div>
+        </div>
+
+        <div class="report-section report-tech-section">
+          <div class="report-section-header">최고기술경영실 개입 현황</div>
+          <div class="report-info-grid">
+            <div class="report-info-cell">
+              <span class="report-info-label">에스컬레이션</span>
+              <span class="escalation-badge esc-${d.escalation_level || 'normal'}">${d.escalation_label || '일반'}</span>
+            </div>
+            <div class="report-info-cell">
+              <span class="report-info-label">개입·조치</span>
+              <span>${d.intervention_label || '미개입'}</span>
+            </div>
+            <div class="report-info-cell">
+              <span class="report-info-label">보상 협의</span>
+              <span>${d.compensation_label || '해당없음'}</span>
+            </div>
+            <div class="report-info-cell">
+              <span class="report-info-label">보상 금액</span>
+              <span>${d.compensation_amount || '—'}</span>
+            </div>
+          </div>
+          ${d.intervention_note ? `<div class="report-text-box" style="margin-top:10px"><strong>개입 메모</strong><br>${d.intervention_note}</div>` : ''}
+          ${d.compensation_note ? `<div class="report-text-box" style="margin-top:8px"><strong>보상 메모</strong><br>${d.compensation_note}</div>` : ''}
+          ${(d.intervention_log && d.intervention_log.length)
+            ? `<div class="report-intervention-log"><strong>개입·조치 이력</strong><ul>${
+                d.intervention_log.map(e => `<li>${e.date || '—'} · ${e.by || '—'} — ${e.note || ''}</li>`).join('')
+              }</ul></div>`
+            : ''}
+          <p class="form-hint report-tech-hint">※ 편집은 최고기술경영실 계정만 가능합니다. 담당 영업·AS는 조회만 가능합니다.</p>
+          ${IS_TECH_MGMT ? `<div style="margin-top:12px"><a class="btn btn-primary" href="/tech-monitor?focus=${encodeURIComponent(d.receipt_no || '')}&tab=list">개입 관리</a></div>` : ''}
+        </div>
+
+        <div class="report-section">
+          <div class="report-section-header">현장 사진 / 고객 전달 사진</div>
+          <div class="report-photo-sections">${photosHtml}</div>
+        </div>
+      </div>`;
+    if (typeof syncReportSupportPanel === 'function') syncReportSupportPanel(d);
+  }
+
+  async function loadReport() {
+    const no = receiptSelect.value;
+    if (!no) return;
+    loadBtn.disabled = true;
+    loadBtn.textContent = '불러오는 중...';
+    try {
+      const res = await fetch(`/api/report/${encodeURIComponent(no)}`);
+      const data = await res.json();
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+      renderReport(data);
+    } catch {
+      alert('보고서를 불러오지 못했습니다.');
+    } finally {
+      loadBtn.disabled = false;
+      loadBtn.textContent = '보고서 불러오기';
+    }
+  }
+
+  loadBtn.addEventListener('click', loadReport);
+  receiptSelect.addEventListener('change', loadReport);
+
+  const customerSearch = document.getElementById('customerSearch');
+  const customerSearchHint = document.getElementById('customerSearchHint');
+  const allReceiptOptions = Array.from(receiptSelect.options).map((opt) => ({
+    value: opt.value,
+    label: opt.textContent,
+    customer: (opt.dataset.customer || '').trim(),
+    selected: opt.selected,
+  }));
+
+  function applyCustomerFilter(query, { reload = false } = {}) {
+    const q = (query || '').trim().toLowerCase();
+    const matched = allReceiptOptions.filter((opt) => {
+      if (!q) return true;
+      return (opt.customer || '').toLowerCase().includes(q) || (opt.label || '').toLowerCase().includes(q);
+    });
+    const prev = receiptSelect.value;
+    receiptSelect.innerHTML = '';
+    matched.forEach((opt) => {
+      const el = document.createElement('option');
+      el.value = opt.value;
+      el.textContent = opt.label;
+      el.dataset.customer = opt.customer;
+      receiptSelect.appendChild(el);
+    });
+    if (matched.some((o) => o.value === prev)) {
+      receiptSelect.value = prev;
+    } else if (matched.length) {
+      receiptSelect.value = matched[0].value;
+      if (reload) loadReport();
+    }
+    if (customerSearchHint) {
+      if (!q) {
+        customerSearchHint.hidden = true;
+        customerSearchHint.textContent = '';
+      } else {
+        customerSearchHint.hidden = false;
+        customerSearchHint.textContent = matched.length
+          ? `"${query.trim()}" 검색 결과 ${matched.length}건`
+          : `"${query.trim()}" 검색 결과가 없습니다`;
+      }
+    }
+  }
+
+  if (customerSearch) {
+    let searchTimer = null;
+    customerSearch.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => applyCustomerFilter(customerSearch.value), 120);
+    });
+    customerSearch.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        applyCustomerFilter(customerSearch.value, { reload: true });
+      }
+    });
+    if ((customerSearch.value || '').trim()) {
+      applyCustomerFilter(customerSearch.value);
+    }
+  }
+
+  const photoLightbox = document.getElementById('photoLightbox');
+  const photoLightboxImage = document.getElementById('photoLightboxImage');
+  const photoLightboxClose = document.getElementById('photoLightboxClose');
+
+  function openPhotoLightbox(src) {
+    photoLightboxImage.src = src;
+    photoLightbox.hidden = false;
+    document.body.classList.add('lightbox-open');
+    photoLightboxClose.focus();
+  }
+
+  function closePhotoLightbox() {
+    photoLightbox.hidden = true;
+    photoLightboxImage.src = '';
+    document.body.classList.remove('lightbox-open');
+  }
+
+  reportDocument.addEventListener('click', (event) => {
+    const trigger = event.target.closest('.photo-zoom-trigger');
+    if (trigger) openPhotoLightbox(trigger.dataset.src);
+  });
+
+  photoLightboxClose.addEventListener('click', closePhotoLightbox);
+  photoLightbox.addEventListener('click', (event) => {
+    if (event.target === photoLightbox) closePhotoLightbox();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !photoLightbox.hidden) closePhotoLightbox();
+  });
+
+  document.getElementById('printBtn').addEventListener('click', () => window.print());
+  document.getElementById('pdfBtn').addEventListener('click', () => {
+    const no = receiptSelect.value;
+    if (!no) {
+      alert('접수번호를 선택하세요.');
+      return;
+    }
+    window.location.href = `/report/${encodeURIComponent(no)}/pdf`;
+  });
+</script>
+{% endblock %}

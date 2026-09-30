@@ -1,0 +1,380 @@
+{% extends "base.html" %}
+
+{% block title %}개입·보상 관리{% endblock %}
+
+{% block content %}
+<section class="tech-monitor">
+  <header class="tech-monitor-hero">
+    <div>
+      <h1 class="tech-monitor-title">전 팀 AS 모니터링 · 개입·보상 관리</h1>
+      <p class="tech-monitor-sub">
+        최고기술경영실 전용. 에스컬레이션 등급·개입 이력·보상 협의를 관리합니다.
+        대상 목록은 조건에 맞는 건을 <strong>한 번에 전부</strong> 표시하며, 검색·필터로 좁힐 수 있습니다.
+      </p>
+    </div>
+  </header>
+
+  <section class="tech-monitor-kpi">
+    <article class="tech-kpi-card">
+      <span>전체 접수</span>
+      <strong>{{ monitor.stats.total }}건</strong>
+    </article>
+    <article class="tech-kpi-card is-watch">
+      <span>모니터링</span>
+      <strong>{{ monitor.stats.monitor }}건</strong>
+    </article>
+    <article class="tech-kpi-card is-critical">
+      <span>심각·개입중</span>
+      <strong>{{ monitor.stats.critical }}건</strong>
+    </article>
+    <article class="tech-kpi-card is-intervene">
+      <span>개입중</span>
+      <strong>{{ monitor.stats.intervening }}건</strong>
+    </article>
+    <article class="tech-kpi-card is-nego">
+      <span>보상 협의중</span>
+      <strong>{{ monitor.stats.negotiating }}건</strong>
+    </article>
+  </section>
+
+  <div class="tech-monitor-tabs" id="techMonitorTabs">
+    <div class="home-list-tab-nav" role="tablist" aria-label="개입·보상 목록">
+      <button type="button" class="home-list-tab is-active" role="tab" aria-selected="true"
+              data-tech-tab="auto" id="techTabAuto">
+        시스템 자동 감지
+        <span class="home-list-tab-count">{{ monitor.auto_flagged_total or (monitor.auto_flagged|length) }}</span>
+      </button>
+      <button type="button" class="home-list-tab" role="tab" aria-selected="false"
+              data-tech-tab="list" id="techTabList">
+        대상 목록
+        <span class="home-list-tab-count">{{ monitor.total_matched }}</span>
+      </button>
+    </div>
+
+    <div class="home-list-panel is-active" role="tabpanel" data-tech-panel="auto"
+         aria-labelledby="techTabAuto" id="auto-detect">
+      <section class="tech-auto-detect">
+        <h2 class="tech-auto-title">시스템 자동 감지 — 검토 필요 후보</h2>
+        <p class="tech-monitor-sub">
+          담당자 미보고 건을 규칙으로 발굴합니다. <strong>자동으로 에스컬레이션하지 않으며</strong>,
+          「등급 지정」에서 건별로 편집합니다.
+          (후보 {{ monitor.auto_flagged_total or (monitor.auto_flagged|length) }}건 · 검토완료 {{ monitor.auto_cleared_count }}건)
+        </p>
+        <ul class="auto-detect-rules">
+          {% for code, name, desc in monitor.auto_rules %}
+          <li><strong>{{ name }}</strong> — {{ desc }}</li>
+          {% endfor %}
+        </ul>
+        {% if monitor.auto_flagged %}
+        <div class="auto-detect-cards">
+          {% for r in monitor.auto_flagged %}
+          <article class="auto-detect-card">
+            <div class="auto-detect-card-head">
+              <a href="{{ url_for('tech_monitor', escalation=monitor.filter_escalation, team=monitor.filter_team, status=monitor.filter_status, q=monitor.q, focus=r.receipt_no, _anchor='case-edit') }}"
+                 class="receipt-link">{{ r.receipt_no }}</a>
+              <span class="auto-detect-meta">{{ r.team }} · {{ r.status_label }}</span>
+            </div>
+            <div class="auto-detect-cust">{{ r.customer_name }} · {{ r.equipment_name }}</div>
+            <div class="auto-detect-flags">
+              {% for lab in r.auto_flag_labels %}
+              <span class="auto-flag-badge">{{ lab }}</span>
+              {% endfor %}
+            </div>
+            <a class="btn btn-outline auto-detect-review"
+               href="{{ url_for('tech_monitor', escalation='active', focus=r.receipt_no, _anchor='case-edit') }}">등급 지정</a>
+          </article>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="tech-monitor-empty">현재 검토 필요 후보가 없습니다.</p>
+        {% endif %}
+      </section>
+    </div>
+
+    <div class="home-list-panel" role="tabpanel" data-tech-panel="list"
+         aria-labelledby="techTabList" id="target-list" hidden>
+      <section class="tech-monitor-list-block">
+        <div class="tech-monitor-list-head">
+          <h2 class="tech-auto-title">대상 목록</h2>
+          <p class="tech-monitor-sub">
+            조건 일치 <strong>{{ monitor.total_matched }}</strong>건 전체 표시
+            · 편집은 행의 <strong>편집</strong>으로 건별 폼을 엽니다
+          </p>
+        </div>
+
+        <form class="tech-monitor-filters" method="get" action="{{ url_for('tech_monitor') }}" id="techMonitorFilterForm">
+          <input type="hidden" name="tab" value="list">
+          <label class="tech-monitor-search">
+            검색
+            <input type="search" name="q" class="form-input" value="{{ monitor.q or '' }}"
+                   placeholder="접수번호·고객·장비·증상·담당자" autocomplete="off">
+          </label>
+          <label>
+            에스컬레이션
+            <select name="escalation" class="form-input">
+              <option value="all" {% if monitor.filter_escalation == 'all' %}selected{% endif %}>전체</option>
+              <option value="active" {% if monitor.filter_escalation == 'active' %}selected{% endif %}>모니터링·심각 (우선)</option>
+              <option value="monitor" {% if monitor.filter_escalation == 'monitor' %}selected{% endif %}>모니터링</option>
+              <option value="critical" {% if monitor.filter_escalation == 'critical' %}selected{% endif %}>심각·개입중</option>
+              <option value="normal" {% if monitor.filter_escalation == 'normal' %}selected{% endif %}>일반</option>
+              <option value="cleared" {% if monitor.filter_escalation == 'cleared' %}selected{% endif %}>문제없음(검토완료)</option>
+              <option value="closed" {% if monitor.filter_escalation == 'closed' %}selected{% endif %}>종결</option>
+            </select>
+          </label>
+          <label>
+            AS 상태
+            <select name="status" class="form-input">
+              <option value="">전체 상태</option>
+              {% for code, label in monitor.status_options %}
+              <option value="{{ code }}" {% if monitor.filter_status == code %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            AS 대응팀
+            <select name="team" class="form-input">
+              <option value="">전체 팀</option>
+              {% for team in monitor.teams %}
+              <option value="{{ team.id }}" {% if monitor.filter_team == team.id %}selected{% endif %}>{{ team.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <div class="tech-monitor-filter-actions">
+            <a class="btn btn-outline" href="{{ url_for('tech_monitor', tab='list', escalation='all') }}">초기화</a>
+          </div>
+        </form>
+
+        {% if monitor.list_rows %}
+        <div class="tech-monitor-table-wrap">
+          <table class="receipt-table tech-monitor-summary-table mobile-list-table" id="techMonitorTable">
+            <thead>
+              <tr>
+                <th>접수번호</th>
+                <th>접수일</th>
+                <th>AS 대응팀</th>
+                <th>고객</th>
+                <th>장비</th>
+                <th>담당</th>
+                <th>상태</th>
+                <th>등급</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for r in monitor.list_rows %}
+              <tr class="{% if r.escalation_level in ('monitor','critical') %}home-dash-row-high{% endif %}{% if monitor.focus_no == r.receipt_no %} is-focused{% endif %}">
+                <td data-label="접수번호"><a class="receipt-link" href="{{ url_for('report', receipt_no=r.receipt_no) }}">{{ r.receipt_no }}</a></td>
+                <td data-label="접수일">{{ r.receipt_date }}</td>
+                <td data-label="AS 대응팀">{{ r.team }}</td>
+                <td data-label="고객">{{ r.customer_name }}</td>
+                <td data-label="장비">{{ r.equipment_name }}</td>
+                <td data-label="담당">{{ r.assignee_display }}</td>
+                <td data-label="상태"><span class="status-badge status-{{ r.status_class }}">{{ r.status_label }}</span></td>
+                <td data-label="등급"><span class="escalation-badge esc-{{ r.escalation_level }}">{{ r.escalation_label }}</span></td>
+                <td data-label="편집" class="mobile-card-actions">
+                  <a class="btn btn-outline"
+                     href="{{ url_for('tech_monitor', escalation=monitor.filter_escalation, team=monitor.filter_team, status=monitor.filter_status, q=monitor.q, tab='list', focus=r.receipt_no, _anchor='case-edit') }}">편집</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="tech-monitor-empty">조건에 맞는 건이 없습니다.</p>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+
+  {% if monitor.rows %}
+  <section class="tech-monitor-list" id="case-edit">
+    <h2 class="tech-auto-title">개입·보상 편집</h2>
+    <p class="tech-monitor-sub">선택한 건만 편집 폼을 표시합니다. 저장 후 목록 등급이 갱신됩니다.</p>
+    {% for r in monitor.rows %}
+    <article class="tech-case-card{% if r.escalation_level == 'critical' %} is-high{% elif r.escalation_level == 'monitor' %} is-monitor{% endif %}{% if r.is_auto_candidate %} is-auto-candidate{% endif %}" id="case-{{ r.receipt_no }}">
+      <header class="tech-case-header">
+        <div>
+          <a class="receipt-link" href="{{ url_for('report', receipt_no=r.receipt_no) }}">{{ r.receipt_no }}</a>
+          <span class="tech-case-team">{{ r.team }}</span>
+          {% if r.is_auto_candidate %}<span class="auto-candidate-tag">자동감지 후보</span>{% endif %}
+        </div>
+        <div class="tech-case-badges">
+          <span class="escalation-badge esc-{{ r.escalation_level }}">{{ r.escalation_label }}</span>
+          <span class="status-badge status-{{ r.status_class }}">{{ r.status_label }}</span>
+        </div>
+      </header>
+      {% if r.auto_flag_labels %}
+      <div class="auto-detect-flags" style="margin:8px 0">
+        {% for lab in r.auto_flag_labels %}
+        <span class="auto-flag-badge">{{ lab }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <div class="tech-case-meta">
+        <div><span>접수일</span><strong>{{ r.receipt_date }}</strong></div>
+        <div><span>고객</span><strong>{{ r.customer_name }}</strong></div>
+        <div><span>장비</span><strong>{{ r.equipment_name }}</strong></div>
+        <div><span>AS 담당</span><strong>{{ r.assignee_display }}</strong></div>
+      </div>
+      <p class="tech-case-symptoms">{{ r.symptoms }}</p>
+
+      <form class="tech-case-form" method="post" action="{{ url_for('tech_monitor_update', receipt_no=r.receipt_no) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="return_escalation" value="{{ monitor.filter_escalation }}">
+        <input type="hidden" name="return_team" value="{{ monitor.filter_team }}">
+        <input type="hidden" name="return_status" value="{{ monitor.filter_status }}">
+        <input type="hidden" name="return_q" value="{{ monitor.q }}">
+        <input type="hidden" name="return_tab" value="list">
+        <input type="hidden" name="return_focus" value="{{ r.receipt_no }}">
+
+        <div class="tech-case-grid">
+          <label>
+            에스컬레이션 등급
+            <select name="escalation_level" class="form-input">
+              {% for code, label in monitor.escalation_options %}
+              <option value="{{ code }}" {% if (r.escalation_level or 'normal') == code %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            개입·조치 상태
+            <select name="intervention_status" class="form-input">
+              {% for code, label in monitor.intervention_options %}
+              <option value="{{ code }}" {% if r.intervention_status == code %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            보상 협의 상태
+            <select name="compensation_status" class="form-input">
+              {% for code, label in monitor.compensation_options %}
+              <option value="{{ code }}" {% if r.compensation_status == code %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label>
+            보상 금액
+            <input type="text" name="compensation_amount" class="form-input" value="{{ r.compensation_amount or '' }}" placeholder="예: 1500000">
+          </label>
+        </div>
+
+        <div class="tech-case-notes">
+          <label>
+            조치·개입 메모
+            <textarea name="intervention_note" class="form-textarea" rows="2" placeholder="개입 사유, 조치 내용">{{ r.intervention_note or '' }}</textarea>
+          </label>
+          <label>
+            보상 협의 메모
+            <textarea name="compensation_note" class="form-textarea" rows="2" placeholder="책임소재·협의 근거 등">{{ r.compensation_note or '' }}</textarea>
+          </label>
+          <label>
+            조치 이력 추가 (날짜·작성자·내용 누적)
+            <textarea name="intervention_log_entry" class="form-textarea" rows="2" placeholder="현장 답사, 고객사 협의 경과 등"></textarea>
+          </label>
+        </div>
+
+        {% if r.intervention_log %}
+        <div class="tech-intervention-log">
+          <strong>개입·조치 이력</strong>
+          <ul>
+            {% for entry in r.intervention_log|reverse %}
+            <li>
+              <span class="tech-log-date">{{ entry.date or '—' }}</span>
+              <span class="tech-log-by">{{ entry.by or '—' }}</span>
+              <span class="tech-log-note">{{ entry.note or '' }}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% endif %}
+
+        <div class="tech-case-footer">
+          <span class="tech-case-updated">
+            {% if r.intervention_at %}
+            최근 갱신: {{ r.intervention_by or '-' }} · {{ r.intervention_at }}
+            {% else %}
+            아직 개입 기록이 없습니다.
+            {% endif %}
+          </span>
+          <div class="tech-case-actions">
+            <a class="btn btn-secondary" href="{{ url_for('report', receipt_no=r.receipt_no) }}">보고서</a>
+            <button type="submit" class="btn btn-primary">저장</button>
+          </div>
+        </div>
+      </form>
+    </article>
+    {% endfor %}
+  </section>
+  {% elif monitor.focus_no %}
+  <p class="tech-monitor-empty" id="case-edit">선택한 접수번호({{ monitor.focus_no }})를 찾을 수 없습니다.</p>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const root = document.getElementById('techMonitorTabs');
+  if (!root) return;
+  const tabs = root.querySelectorAll('[data-tech-tab]');
+  const panels = root.querySelectorAll('[data-tech-panel]');
+  function activate(key) {
+    tabs.forEach((tab) => {
+      const on = tab.getAttribute('data-tech-tab') === key;
+      tab.classList.toggle('is-active', on);
+      tab.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    panels.forEach((panel) => {
+      const on = panel.getAttribute('data-tech-panel') === key;
+      panel.classList.toggle('is-active', on);
+      panel.hidden = !on;
+    });
+    try { sessionStorage.setItem('tech_monitor_tab', key); } catch (e) { /* ignore */ }
+  }
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => activate(tab.getAttribute('data-tech-tab')));
+  });
+
+  const params = new URLSearchParams(location.search);
+  const hash = (location.hash || '').replace(/^#/, '');
+  let initial = 'auto';
+  if (params.get('tab') === 'list' || params.get('focus') || hash === 'case-edit' || hash === 'target-list') {
+    initial = 'list';
+  } else if (hash === 'auto-detect') {
+    initial = 'auto';
+  } else {
+    try {
+      const saved = sessionStorage.getItem('tech_monitor_tab');
+      if (saved === 'list' || saved === 'auto') initial = saved;
+    } catch (e) { /* ignore */ }
+  }
+  activate(initial);
+})();
+</script>
+<script>
+(function () {
+  const form = document.getElementById('techMonitorFilterForm');
+  if (!form) return;
+  let searchTimer = null;
+
+  function submitFilters() {
+    form.submit();
+  }
+
+  form.querySelectorAll('select').forEach((el) => {
+    el.addEventListener('change', submitFilters);
+  });
+
+  const qEl = form.querySelector('input[name="q"]');
+  if (qEl) {
+    qEl.addEventListener('input', () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(submitFilters, 350);
+    });
+    qEl.addEventListener('search', submitFilters);
+  }
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,519 @@
+{% extends "base.html" %}
+
+{% block title %}기간별 AS 현황보고{% endblock %}
+
+{% block content %}
+<section class="status-report">
+  <header class="status-report-hero">
+    <div>
+      <h1 class="status-report-title">기간별 AS 현황보고</h1>
+      <p class="status-report-sub">월별 · 분기별 · 연도별 접수·처리·비용 현황을 확인하고 전체 이력을 CSV로 내려받을 수 있습니다.</p>
+    </div>
+    <div class="status-report-toolbar">
+      <form class="status-report-year-form" method="get" action="{{ url_for('status_report') }}">
+        <input type="hidden" name="period" value="{{ report.period }}">
+        <label for="reportYear">조회 연도</label>
+        <select id="reportYear" name="year" class="form-input" onchange="this.form.submit()"
+                {% if report.period == 'year' %}disabled title="연도별 보기에서는 전체 연도를 비교합니다"{% endif %}>
+          {% for y in report.year_options %}
+          <option value="{{ y }}" {% if y == report.year %}selected{% endif %}>{{ y }}년</option>
+          {% endfor %}
+        </select>
+        {% if report.period == 'year' %}
+        <input type="hidden" name="year" value="{{ report.year }}">
+        {% endif %}
+      </form>
+      <div class="status-report-export">
+        <a class="btn btn-primary" href="{{ url_for('status_report_export_csv') }}">전체 이력 CSV</a>
+        <a class="btn btn-outline" href="{{ url_for('status_report_export_csv', year=report.year) }}">{{ report.year }}년 CSV</a>
+      </div>
+    </div>
+  </header>
+
+  <nav class="status-period-tabs" aria-label="기간 단위">
+    <a href="{{ url_for('status_report', year=report.year, period='month') }}"
+       class="status-period-tab {% if report.period == 'month' %}active{% endif %}">월별</a>
+    <a href="{{ url_for('status_report', year=report.year, period='quarter') }}"
+       class="status-period-tab {% if report.period == 'quarter' %}active{% endif %}">분기별</a>
+    <a href="{{ url_for('status_report', year=report.year, period='year') }}"
+       class="status-period-tab {% if report.period == 'year' %}active{% endif %}">연도별</a>
+  </nav>
+
+  <p class="status-report-export-hint">
+    CSV에는 부품비용·청구비용·워런티·재수리 여부 및 접수·완료의 연도/분기/월 필드가 포함되어 Excel 피벗 분석에 바로 사용할 수 있습니다.
+  </p>
+
+  <section class="status-report-kpi status-report-kpi-framed">
+    <article class="status-kpi-card">
+      <span class="status-kpi-label">전체 접수</span>
+      <strong class="status-kpi-value">{{ report.overall.total }}건</strong>
+    </article>
+    <article class="status-kpi-card is-pending">
+      <span class="status-kpi-label">미처리</span>
+      <strong class="status-kpi-value">{{ report.overall.pending }}건</strong>
+    </article>
+    <article class="status-kpi-card is-done">
+      <span class="status-kpi-label">누적 완료</span>
+      <strong class="status-kpi-value">{{ report.overall.completed }}건</strong>
+    </article>
+    <article class="status-kpi-card is-rate">
+      <span class="status-kpi-label">완료율</span>
+      <strong class="status-kpi-value">{{ report.overall.completion_rate }}%</strong>
+    </article>
+    <article class="status-kpi-card">
+      <span class="status-kpi-label">{{ report.year }}년 접수</span>
+      <strong class="status-kpi-value">{{ report.overall.year_received }}건</strong>
+    </article>
+    <article class="status-kpi-card is-done">
+      <span class="status-kpi-label">{{ report.year }}년 처리</span>
+      <strong class="status-kpi-value">{{ report.overall.year_completed }}건</strong>
+    </article>
+    <article class="status-kpi-card">
+      <span class="status-kpi-label">금월 접수</span>
+      <strong class="status-kpi-value">{{ report.overall.received_this_month }}건</strong>
+    </article>
+    <article class="status-kpi-card is-done">
+      <span class="status-kpi-label">금월 처리</span>
+      <strong class="status-kpi-value">{{ report.overall.completed_this_month }}건</strong>
+    </article>
+    <article class="status-kpi-card">
+      <span class="status-kpi-label">기간 부품비용</span>
+      <strong class="status-kpi-value">{{ "{:,}".format(report.overall.parts_cost_total) }}원</strong>
+    </article>
+    <article class="status-kpi-card">
+      <span class="status-kpi-label">기간 청구비용</span>
+      <strong class="status-kpi-value">{{ "{:,}".format(report.overall.billing_cost_total) }}원</strong>
+    </article>
+  </section>
+
+  {% if report.support_requests is defined and not current_user_is_tech_mgmt %}
+  <section class="status-report-block support-monitor-block">
+    <h2 class="status-report-section-title">부서 지원요청 현황</h2>
+    <p class="status-report-export-hint">대기중·확인함 건만 표시합니다(회신완료·반려됨 제외). AS완료 여부로는 걸러내지 않으며 AS상태는 배지로만 구분합니다. {{ report.support_sla_days|default(2) }}일 이상 지연·긴급직행은 강조됩니다.</p>
+    <div class="table-wrap status-report-table-wrap">
+      <table class="status-report-table mobile-list-table support-monitor-table">
+        <thead>
+          <tr>
+            <th>접수번호</th>
+            <th>고객명</th>
+            <th>요청 부서</th>
+            <th>상태</th>
+            <th>경과일</th>
+            <th>요청자</th>
+            <th>AS상태</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in report.support_requests %}
+          <tr class="{% if item.overdue or item.urgent %}is-overdue{% endif %}">
+            <td class="mobile-card-title" data-label="접수번호">
+              <a href="{{ url_for('report', receipt_no=item.receipt_no) }}">{{ item.receipt_no }}</a>
+              {% if item.urgent %}<span class="support-badge is-urgent">🚨 긴급직행</span>{% endif %}
+              {% if item.overdue %}<span class="support-badge is-overdue">⚠ 지연</span>{% endif %}
+            </td>
+            <td data-label="고객명">{{ item.customer_name }}</td>
+            <td data-label="요청 부서">{{ item.kind_label }}</td>
+            <td data-label="상태"><span class="support-badge status-{{ item.status }}">{{ item.status_label }}</span></td>
+            <td data-label="경과일">{{ item.days_open }}일</td>
+            <td data-label="요청자">{{ item.requester or '—' }}</td>
+            <td data-label="AS상태">{{ item.as_status_label or item.as_status or '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7">열린 지원요청이 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if report.staff_performance_segments is defined %}
+  <section class="status-report-block staff-performance-block">
+    <h2 class="status-report-section-title">담당자별 실적</h2>
+    <p class="status-report-export-hint">{{ report.other_team_support_note }}</p>
+    <div class="staff-team-agg-note" role="note">
+      <p class="staff-team-agg-note-title">집계 기준이 다릅니다 (팀 합 ≠ 담당자 합 · 정상)</p>
+      <div class="table-wrap">
+        <table class="status-report-table staff-team-agg-table">
+          <thead>
+            <tr>
+              <th>구분</th>
+              <th>집계 기준</th>
+              <th>예: 한 건에 3명 공동지정</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>팀 전체 실적</td>
+              <td>원 접수팀 · 어느 팀 소관인가</td>
+              <td>팀 실적 <strong>1건</strong></td>
+            </tr>
+            <tr>
+              <td>담당자별 실적</td>
+              <td>지정 담당자 + 실제 처리자 · 누가 일했는가</td>
+              <td>각자 <strong>1건</strong> → 개인합 <strong>3건</strong></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="staff-team-agg-note-foot">공동지정이 많을수록 담당자 합계가 팀 합계보다 커집니다. 두 집계는 의도적으로 분리되어 있습니다.</p>
+    </div>
+    <div class="table-wrap status-report-table-wrap">
+      <table class="status-report-table mobile-list-table staff-performance-table">
+        <thead>
+          <tr>
+            <th>담당자</th>
+            <th>소속팀</th>
+            <th>기간 접수(담당)</th>
+            <th>기간 완료</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for seg in report.staff_performance_segments %}
+          <tr class="is-segment-row">
+            <th colspan="4" scope="colgroup">{{ seg.label }}</th>
+          </tr>
+          {% if seg.empty %}
+          <tr class="is-empty-segment">
+            <td colspan="4" class="staff-performance-empty">실적 없음</td>
+          </tr>
+          {% else %}
+          {% for row in seg.rows %}
+          <tr>
+            <td class="mobile-card-title" data-label="담당자">
+              {{ row.name }}{% if row.other_team_support %}<span class="staff-other-team-note"> (타팀건 {{ row.other_team_support }}건 지원 포함)</span>{% endif %}
+            </td>
+            <td data-label="소속팀">{{ row.team_name or '-' }}</td>
+            <td data-label="접수">{{ row.received }}</td>
+            <td data-label="완료">{{ row.completed }}</td>
+          </tr>
+          {% endfor %}
+          {% endif %}
+          {% endfor %}
+          {% if report.staff_performance_total %}
+          <tr class="is-total-row">
+            <td class="mobile-card-title" data-label="담당자">{{ report.staff_performance_total.name }}</td>
+            <td data-label="소속팀">-</td>
+            <td data-label="접수">{{ report.staff_performance_total.received }}</td>
+            <td data-label="완료">{{ report.staff_performance_total.completed }}</td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="status-report-block">
+    <h2 class="status-report-section-title">{{ report.period_title }}</h2>
+    <div class="status-chart-legend">
+      <span><i class="legend-dot is-received"></i> 접수</span>
+      <span><i class="legend-dot is-completed"></i> 처리(완료)</span>
+    </div>
+    <div class="status-month-chart">
+      {% for row in report.overall.period_rows %}
+      <div class="status-month-chart-row">
+        <span class="status-month-chart-label">{{ row.short_label }}</span>
+        <div class="status-month-chart-bars">
+          <div class="status-bar-track">
+            <div class="status-bar is-received"
+                 style="width: {{ (row.received / report.overall.chart_max * 100)|round|int }}%;"
+                 title="접수 {{ row.received }}건"></div>
+          </div>
+          <div class="status-bar-track">
+            <div class="status-bar is-completed"
+                 style="width: {{ (row.completed / report.overall.chart_max * 100)|round|int }}%;"
+                 title="처리 {{ row.completed }}건"></div>
+          </div>
+        </div>
+        <span class="status-month-chart-meta">{{ row.received }}/{{ row.completed }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="table-wrap status-report-table-wrap">
+      <table class="receipt-table status-report-table status-period-table mobile-list-table">
+        <thead>
+          <tr>
+            <th>{{ report.period_unit }}</th>
+            <th>접수</th>
+            <th>완료</th>
+            <th>순증감</th>
+            <th>부품비</th>
+            <th>청구비</th>
+            <th>재수리</th>
+            <th>워런티</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in report.overall.period_rows %}
+          <tr>
+            <td class="mobile-card-title" data-label="{{ report.period_unit }}">{{ row.short_label or row.label }}</td>
+            <td data-label="접수">{{ row.received }}</td>
+            <td data-label="완료">{{ row.completed }}</td>
+            <td data-label="순증감" class="{% if row.net > 0 %}text-pending{% elif row.net < 0 %}text-done{% endif %}">
+              {% if row.net > 0 %}+{% endif %}{{ row.net }}
+            </td>
+            <td class="col-cost" data-label="부품비">{{ "{:,}".format(row.parts_cost) }}원</td>
+            <td class="col-cost" data-label="청구비">{{ "{:,}".format(row.billing_cost) }}원</td>
+            <td data-label="재수리">{{ row.re_repair_count }}</td>
+            <td data-label="워런티">{{ row.warranty_count }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th class="mobile-card-title" data-label="구분">합계</th>
+            <td data-label="접수">{{ report.overall.period_rows | sum(attribute='received') }}</td>
+            <td data-label="완료">{{ report.overall.period_rows | sum(attribute='completed') }}</td>
+            <td data-label="순증감"></td>
+            <td class="col-cost" data-label="부품비">{{ "{:,}".format(report.overall.parts_cost_total) }}원</td>
+            <td class="col-cost" data-label="청구비">{{ "{:,}".format(report.overall.billing_cost_total) }}원</td>
+            <td data-label="재수리">{{ report.overall.period_rows | sum(attribute='re_repair_count') }}</td>
+            <td data-label="워런티">{{ report.overall.period_rows | sum(attribute='warranty_count') }}</td>
+          </tr>
+        </tfoot>
+      </table>
+      <p class="status-table-unit-hint">단위: 건 · 원</p>
+    </div>
+  </section>
+
+  <section class="status-report-block">
+    <h2 class="status-report-section-title">AS 대응팀별 요약</h2>
+    <p class="status-report-export-hint">원 접수팀 기준 · 접수 1건 = 팀 실적 1회 (공동담당 인원과 무관)</p>
+    <div class="table-wrap status-report-table-wrap">
+      <table class="receipt-table status-report-table status-team-summary-table mobile-list-table">
+        <thead>
+          <tr>
+            <th>AS 대응팀</th>
+            <th>전체</th>
+            <th>미처리</th>
+            <th>접수</th>
+            <th>임시</th>
+            <th>진행</th>
+            <th>완료</th>
+            <th>완료율</th>
+            <th>연접</th>
+            <th>연완</th>
+            <th>월접</th>
+            <th>월완</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for team in report.teams %}
+          <tr>
+            <th scope="row" class="mobile-card-title" data-label="AS 대응팀">{{ team.team_name }}</th>
+            <td data-label="전체">{{ team.total }}</td>
+            <td class="text-pending" data-label="미처리">{{ team.pending_count }}</td>
+            <td data-label="접수">{{ team.pending_by_status.received }}</td>
+            <td data-label="임시">{{ team.pending_by_status.draft }}</td>
+            <td data-label="진행">{{ team.pending_by_status.in_progress }}</td>
+            <td class="text-done" data-label="완료">{{ team.completed_count }}</td>
+            <td data-label="완료율">{{ team.completion_rate }}%</td>
+            <td data-label="연접" title="{{ report.year }}년 접수">{{ team.year_received }}</td>
+            <td data-label="연완" title="{{ report.year }}년 처리">{{ team.year_completed }}</td>
+            <td data-label="월접" title="금월 접수">{{ team.received_this_month }}</td>
+            <td data-label="월완" title="금월 처리">{{ team.completed_this_month }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        {% if report.teams_total %}
+        <tfoot>
+          <tr class="is-total-row">
+            <th scope="row" class="mobile-card-title" data-label="AS 대응팀">{{ report.teams_total.team_name }}</th>
+            <td data-label="전체">{{ report.teams_total.total }}</td>
+            <td class="text-pending" data-label="미처리">{{ report.teams_total.pending_count }}</td>
+            <td data-label="접수">{{ report.teams_total.pending_by_status.received }}</td>
+            <td data-label="임시">{{ report.teams_total.pending_by_status.draft }}</td>
+            <td data-label="진행">{{ report.teams_total.pending_by_status.in_progress }}</td>
+            <td class="text-done" data-label="완료">{{ report.teams_total.completed_count }}</td>
+            <td data-label="완료율">{{ report.teams_total.completion_rate }}%</td>
+            <td data-label="연접">{{ report.teams_total.year_received }}</td>
+            <td data-label="연완">{{ report.teams_total.year_completed }}</td>
+            <td data-label="월접">{{ report.teams_total.received_this_month }}</td>
+            <td data-label="월완">{{ report.teams_total.completed_this_month }}</td>
+          </tr>
+        </tfoot>
+        {% endif %}
+      </table>
+      <p class="status-table-unit-hint">연접/연완 = {{ report.year }}년 접수·완료 · 월접/월완 = 금월 접수·완료 · 단위: 건</p>
+    </div>
+  </section>
+
+  {% for team in report.teams %}
+  <section class="status-report-block status-team-block" id="team-{{ team.team_code }}">
+    <header class="status-team-header">
+      <h2 class="status-report-section-title">{{ team.team_name }}</h2>
+      <div class="status-team-badges">
+        <span class="status-team-badge">전체 {{ team.total }}건</span>
+        <span class="status-team-badge is-pending">미처리 {{ team.pending_count }}건</span>
+        <span class="status-team-badge is-done">완료 {{ team.completed_count }}건</span>
+      </div>
+    </header>
+
+    <div class="status-team-grid">
+      <div class="status-team-panel status-team-panel-chart">
+        <h3 class="status-team-panel-title">{{ report.period_title }}</h3>
+        <div class="status-month-chart is-compact">
+          {% for row in team.period_rows %}
+          <div class="status-month-chart-row">
+            <span class="status-month-chart-label">{{ row.short_label }}</span>
+            <div class="status-month-chart-bars">
+              <div class="status-bar-track">
+                <div class="status-bar is-received"
+                     style="width: {{ (row.received / team.chart_max * 100)|round|int }}%;"></div>
+              </div>
+              <div class="status-bar-track">
+                <div class="status-bar is-completed"
+                     style="width: {{ (row.completed / team.chart_max * 100)|round|int }}%;"></div>
+              </div>
+            </div>
+            <span class="status-month-chart-meta">{{ row.received }}/{{ row.completed }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="table-wrap status-report-table-wrap" style="margin-top:12px">
+          <table class="status-pending-table status-period-mini-table mobile-list-table">
+            <thead>
+              <tr>
+                <th>{{ report.period_unit }}</th>
+                <th>접수</th>
+                <th>완료</th>
+                <th>부품</th>
+                <th>청구</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in team.period_rows %}
+              <tr>
+                <td class="mobile-card-title" data-label="{{ report.period_unit }}">{{ row.short_label }}</td>
+                <td data-label="접수">{{ row.received }}</td>
+                <td data-label="완료">{{ row.completed }}</td>
+                <td class="col-cost" data-label="부품">{{ "{:,}".format(row.parts_cost) }}원</td>
+                <td class="col-cost" data-label="청구">{{ "{:,}".format(row.billing_cost) }}원</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot>
+              <tr class="is-total-row">
+                <th class="mobile-card-title" data-label="구분">합계</th>
+                <td data-label="접수">{{ team.period_rows | sum(attribute='received') }}</td>
+                <td data-label="완료">{{ team.period_rows | sum(attribute='completed') }}</td>
+                <td class="col-cost" data-label="부품">{{ "{:,}".format(team.period_rows | sum(attribute='parts_cost')) }}원</td>
+                <td class="col-cost" data-label="청구">{{ "{:,}".format(team.period_rows | sum(attribute='billing_cost')) }}원</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="status-team-panel status-team-panel-pending" data-assignee-detail>
+        <div class="status-pending-head">
+          <h3 class="status-team-panel-title">미처리 현황 <span class="status-pending-count">{{ team.pending_count }}건</span></h3>
+          {% if team.pending_by_assignee %}
+          <button type="button" class="btn btn-outline status-assignee-toggle-all" data-assignee-toggle-all>
+            모두 펼치기
+          </button>
+          {% endif %}
+        </div>
+        {% if team.pending_by_assignee %}
+        <div class="status-pending-assignee-list">
+          {% for group in team.pending_by_assignee %}
+          <div class="status-assignee-group is-collapsed" data-assignee-group>
+            <div class="status-assignee-summary-row">
+              <span class="col-assignee-name">{{ group.assignee }}</span>
+              <span class="col-assignee-total text-pending">{{ group.total }}건</span>
+              <span class="col-assignee-stat">접수 {{ group.received }}</span>
+              <span class="col-assignee-stat">임시 {{ group.draft }}</span>
+              <span class="col-assignee-stat">진행 {{ group.in_progress }}</span>
+              <button type="button" class="btn btn-outline status-assignee-row-toggle" data-assignee-toggle
+                      aria-expanded="false">
+                <span class="status-assignee-toggle-label">펼치기</span>
+              </button>
+            </div>
+            <div class="status-assignee-group-body" hidden>
+              <div class="table-wrap status-pending-table-wrap">
+                <table class="status-pending-table status-assignee-items-table mobile-list-table">
+                  <thead>
+                    <tr>
+                      <th>접수번호</th>
+                      <th>접수일</th>
+                      <th>고객명</th>
+                      <th>장비</th>
+                      <th>상태</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for item in group.pending_rows %}
+                    <tr>
+                      <td class="col-receipt-no" data-label="접수번호">
+                        <a href="{{ url_for('report', receipt_no=item.receipt_no) }}"
+                           class="receipt-link" title="{{ item.receipt_no }}">{{ item.receipt_no }}</a>
+                      </td>
+                      <td class="col-date" data-label="접수일">{{ item.receipt_date }}</td>
+                      <td class="col-customer" data-label="고객명" title="{{ item.customer_name }}">{{ item.customer_name }}</td>
+                      <td class="col-equipment" data-label="장비" title="{{ item.equipment_name }}">{{ item.equipment_name }}</td>
+                      <td class="col-status" data-label="상태"><span class="status-badge status-{{ item.status_class }}">{{ item.status_label }}</span></td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="status-empty-note">미처리 건이 없습니다.</p>
+        {% endif %}
+      </div>
+    </div>
+  </section>
+  {% endfor %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  function setGroupOpen(group, open) {
+    const btn = group.querySelector('[data-assignee-toggle]');
+    const body = group.querySelector('.status-assignee-group-body');
+    const label = group.querySelector('.status-assignee-toggle-label');
+    if (!btn || !body) return;
+    group.classList.toggle('is-collapsed', !open);
+    group.classList.toggle('is-open', open);
+    body.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (label) label.textContent = open ? '접기' : '펼치기';
+  }
+
+  function syncToggleAll(root) {
+    const btn = root.querySelector('[data-assignee-toggle-all]');
+    if (!btn) return;
+    const groups = root.querySelectorAll('[data-assignee-group]');
+    const allOpen = groups.length > 0 && Array.from(groups).every((g) => g.classList.contains('is-open'));
+    btn.textContent = allOpen ? '모두 접기' : '모두 펼치기';
+    btn.dataset.mode = allOpen ? 'collapse' : 'expand';
+  }
+
+  document.querySelectorAll('[data-assignee-detail]').forEach((root) => {
+    root.addEventListener('click', (ev) => {
+      const toggleAll = ev.target.closest('[data-assignee-toggle-all]');
+      if (toggleAll && root.contains(toggleAll)) {
+        const expand = toggleAll.dataset.mode !== 'collapse';
+        root.querySelectorAll('[data-assignee-group]').forEach((g) => setGroupOpen(g, expand));
+        syncToggleAll(root);
+        return;
+      }
+      const toggle = ev.target.closest('[data-assignee-toggle]');
+      if (!toggle || !root.contains(toggle)) return;
+      const group = toggle.closest('[data-assignee-group]');
+      if (!group) return;
+      setGroupOpen(group, group.classList.contains('is-collapsed'));
+      syncToggleAll(root);
+    });
+    syncToggleAll(root);
+  });
+})();
+</script>
+{% endblock %}

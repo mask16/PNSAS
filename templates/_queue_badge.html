@@ -1,0 +1,9 @@
+{% if r.queue_type in ('waiting', 'progress') %}
+<span class="queue-badge queue-{{ r.queue_type }}">
+  <span class="queue-icon" aria-hidden="true">{% if r.queue_type == 'waiting' %}⏳{% else %}🔧{% endif %}</span>
+  {% if r.queue_label %}<span class="queue-label">{{ r.queue_label }}</span>{% endif %}
+  <span class="queue-rank">{{ r.queue_rank or r.queue_main or r.queue_text }}</span>
+</span>
+{% elif r.queue_text and r.queue_type != 'none' %}
+<span class="queue-badge queue-{{ r.queue_type }}">{{ r.queue_text }}</span>
+{% endif %}

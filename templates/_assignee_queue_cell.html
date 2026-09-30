@@ -1,0 +1,22 @@
+<td data-label="{{ queue_cell_label|default('담당·대기순번') }}" class="assignee-queue-cell{% if r.as_unassigned %} text-muted{% endif %}">
+  <span class="assignee-queue-name">{% include '_assignee_display.html' %}</span>
+  {% if r.transfer_pending_id %}
+  <span class="status-badge status-transfer-pending">{{ r.transfer_pending_label or '→ 이관 승인 대기중' }}</span>
+  {% endif %}
+  {% if r.origin_team_tag %}
+  <span class="origin-team-tag">{{ r.origin_team_tag }}</span>
+  {% endif %}
+  {% if r.can_reassign_as %}
+  <button type="button" class="receipt-edit-btn js-assign-as"
+          data-no="{{ r.receipt_no }}"
+          data-team="{{ r.handling_team_id or r.team_id }}"
+          data-current="{{ r.as_staff or '' }}"
+          {% set _ids = r.as_staff_ids if r.as_staff_ids else [] %}
+          data-current-ids="{% if _ids %}{{ _ids|join(',') }}{% elif r.as_staff %}{{ r.as_staff }}{% endif %}"
+          data-current-label="{{ r.as_display or r.assignee_display or '미지정' }}"
+          data-can-multi="{{ '1' if r.can_multi_assign_as else '0' }}"
+          data-customer="{{ r.customer_display or r.customer_name or '' }}"
+          data-equipment="{{ r.equipment_name or '' }}">지정·변경</button>
+  {% endif %}
+  {% include '_queue_badge.html' %}
+</td>

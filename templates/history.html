@@ -1,0 +1,1573 @@
+{% extends "base.html" %}
+
+{% block title %}이력관리{% endblock %}
+
+{% block content %}
+<div class="page-header history-header">
+  <div>
+    <h1 class="page-title page-title-dark">
+      {% if is_support_viewer %}지원요청 조회{% else %}AS 이력관리 - 현장 처리{% endif %}
+    </h1>
+    <p class="page-desc">
+      {% if is_quality_viewer %}
+      품질팀에 공유된 건을 검토하고, 기술 지원이 필요하면 {{ '기술연구소' if is_rods else '기술부' }}에 공유할 수 있습니다.
+      {% elif is_support_viewer %}
+      품질팀/{{ '기술연구소' if is_rods else '기술부' }}에 공유된 지원요청 건만 표시됩니다. 조회 전용입니다.
+      {% else %}
+      영업접수 건을 선택해 점검 수리 내용을 기록하고, 완료 시 사진과 함께 저장합니다.
+      {% endif %}
+    </p>
+  </div>
+  <div class="waiting-count">대기 건 <strong id="waitingCount">{{ waiting_count }}</strong>건</div>
+</div>
+
+<div class="history-tabs" id="historyTabs">
+  {% for team in history_teams %}
+    <a href="{{ url_for('history', tab=team.id) }}"
+       class="history-tab {% if history_tab == team.id %}active{% endif %}"
+       data-tab="{{ team.id }}">
+      {{ team.name }}
+      <span class="history-tab-count">{{ team.waiting_count }}</span>
+    </a>
+  {% endfor %}
+</div>
+
+<form id="historyForm" class="history-form" action="{{ url_for('history_save') }}" method="post" enctype="multipart/form-data">
+  <input type="hidden" name="tab" value="{{ history_tab }}">
+  <input type="hidden" name="action" id="formAction" value="draft">
+  <input type="hidden" name="parts_json" id="partsJson" value="[]">
+  <input type="hidden" name="existing_photos_json" id="existingPhotosJson" value="[]">
+  <input type="hidden" name="history_updated_at" id="historyUpdatedAt" value="">
+
+  <!-- 1. 접수 건 조회 -->
+  <section class="form-card history-section">
+    <div class="form-card-header">1. 접수 건 조회</div>
+    <div class="form-card-body">
+      <div class="history-load-row">
+        <div class="form-group form-group-grow">
+          <label class="form-label">접수번호 조회 <span class="required">*</span></label>
+          <select id="receiptSelect" name="receipt_no" class="form-select" required>
+            {% if waiting_options %}
+              <option value="">접수번호를 선택하세요</option>
+              {% for opt in waiting_options %}
+                <option value="{{ opt.receipt_no }}" {% if opt.receipt_no == selected_receipt_no %}selected{% endif %}>
+                  {{ opt.label }}
+                </option>
+              {% endfor %}
+            {% else %}
+              <option value="">처리 대기 중인 건이 없습니다</option>
+            {% endif %}
+          </select>
+        </div>
+        <button type="button" class="btn btn-primary" id="loadBtn">불러오기</button>
+      </div>
+      <p class="form-hint history-note">※ 고객정보/제품정보는 영업접수 데이터를 그대로 불러오며 수정할 수 없습니다.</p>
+      <p class="form-hint history-lock-meta" id="historyLockMeta">마지막 수정: 접수 건을 불러오면 표시됩니다.</p>
+
+      <div class="customer-info-box" id="customerInfoBox" hidden>
+        <div class="customer-info-grid">
+          <div><span class="report-info-label">고객명</span><span id="infoCustomer">—</span></div>
+          <div><span class="report-info-label">{{ ui_labels.product_field }}</span><span id="infoEquipment">—</span></div>
+          <div><span class="report-info-label">증상</span><span id="infoSymptoms">—</span></div>
+          <div><span class="report-info-label">유/무상</span><span id="infoCharge">—</span></div>
+        </div>
+        <div class="past-history-box" id="historyPastBox" style="margin-top:12px">
+          <strong>동일 고객사 과거이력</strong>
+          <div id="historyPastList" class="past-history-list"></div>
+          <strong class="past-history-sub">동일 장비 건</strong>
+          <div id="historyPastSameEquip" class="past-history-list"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. 점검 정보 -->
+  <section class="form-card history-section">
+    <div class="form-card-header">2. 점검 정보</div>
+    <div class="form-card-body">
+      <div class="form-grid form-grid-3">
+        <div class="form-group">
+          <label class="form-label">점검날짜 <span class="required">*</span></label>
+          <input type="date" name="inspection_date" id="inspectionDate" class="form-input" value="{{ today }}" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">소속</label>
+          <select name="affiliation" id="affiliation" class="form-select">
+            {% for opt in affiliation_options %}
+              <option value="{{ opt.value }}"
+                      {% if opt.value == default_affiliation %}selected{% endif %}>{{ opt.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">서비스 담당자</label>
+          <input type="text" name="as_technician" id="asTechnician" class="form-input"
+                 value=""
+                 placeholder="AS전담·접수+AS 저장 시 본인으로 기록"
+                 readonly>
+          <p class="form-hint">AS전담·접수+AS 계정이 저장할 때만 본인으로 갱신됩니다. 품질팀·기술부·부서장·관리자 저장 시에는 바뀌지 않습니다.</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">{{ ui_labels.serial_field }}</label>
+          <input type="text" name="serial_no" id="serialNo" class="form-input"
+                 placeholder="{% if is_rods %}제품명 · 규격 · 로트번호{% else %}예: AJJA00002{% endif %}"
+                 {% if is_rods %}readonly{% endif %}>
+        </div>
+        <div class="form-group">
+          <label class="form-label">처리 위치</label>
+          <div class="toggle-group" id="locationToggle">
+            <button type="button" class="toggle-btn active" data-value="field">현장</button>
+            <button type="button" class="toggle-btn" data-value="factory">공장</button>
+          </div>
+          <input type="hidden" name="process_location" id="processLocation" value="field">
+        </div>
+        <div class="form-group">
+          <label class="form-label">출고일자</label>
+          <input type="date" name="ship_out_date" id="shipOutDate" class="form-input">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. 점검 및 수리/조치 내용 -->
+  <section class="form-card history-section">
+    <div class="form-card-header">{{ ui_labels.step3_title }}</div>
+    <div class="form-card-body">
+      <div class="form-group">
+        <label class="form-label">점검결과</label>
+        <textarea name="inspection_result" id="inspectionResult" class="form-textarea" rows="3" placeholder="점검 후 확인된 원인을 입력"></textarea>
+      </div>
+      <div class="form-group" style="margin-top:16px">
+        <label class="form-label">{{ ui_labels.repair_label }}</label>
+        <textarea name="repair_content" id="repairContent" class="form-textarea" rows="3" placeholder="예: 컨트롤 케이블 9P 라인 단선으로 교체"></textarea>
+      </div>
+      <div class="form-group" style="margin-top:16px">
+        <label class="form-label">상세 점검 및 작업내용</label>
+        <textarea name="detailed_work" id="detailedWork" class="form-textarea" rows="4" placeholder="세부 작업 이력을 자유롭게 기록"></textarea>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. 교체 부품 -->
+  <section class="form-card history-section">
+    <div class="form-card-header">
+      {{ ui_labels.step4_title }}
+      <span class="section-badge" id="partsCountBadge">0개 항목</span>
+    </div>
+    <div class="form-card-body">
+      <div class="parts-table-wrap">
+        <table class="parts-edit-table" id="partsTable">
+          <thead>
+            <tr>
+              <th>{{ ui_labels.part_name }}</th>
+              <th>규격</th>
+              <th>{{ ui_labels.part_qty }}</th>
+              <th>단가(원)</th>
+              <th>소계</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="partsBody"></tbody>
+        </table>
+      </div>
+      <div class="parts-footer">
+        <span class="parts-total-label">{{ ui_labels.parts_total }} <strong id="partsTotal">0</strong>원</span>
+        <button type="button" class="btn btn-outline" id="addPartBtn">{{ ui_labels.add_part }}</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. 현장 사진 -->
+  <section class="form-card history-section">
+    <div class="form-card-header">
+      5. 현장 사진 첨부
+      <span class="section-badge" id="photoCountBadge">0장 첨부됨</span>
+    </div>
+    <div class="form-card-body">
+      <div class="photo-tag-filters" id="photoTagFilters">
+        <button type="button" class="photo-tag-btn active" data-filter="all">전체</button>
+        <button type="button" class="photo-tag-btn" data-filter="customer">고객 전달</button>
+        <button type="button" class="photo-tag-btn" data-filter="before">수리 전</button>
+        <button type="button" class="photo-tag-btn" data-filter="after">수리 후</button>
+        <button type="button" class="photo-tag-btn" data-filter="parts">{{ ui_labels.report_parts }}</button>
+      </div>
+
+      <div class="field-photo-actions">
+        <label class="btn btn-outline field-photo-action-btn" for="fieldPhotoCamera">
+          <input type="file" id="fieldPhotoCamera" accept="image/*" capture="environment" hidden>
+          카메라 촬영
+        </label>
+        <label class="btn btn-outline field-photo-action-btn" for="fieldPhotoInput">
+          <input type="file" id="fieldPhotoInput" accept="image/*" multiple hidden>
+          여러 장 선택
+        </label>
+      </div>
+      <p class="form-hint history-note field-photo-hint-mobile">앨범에서 여러 장을 한 번에 선택하거나, 카메라로 바로 촬영할 수 있습니다. 선택한 태그로 일괄 분류됩니다.</p>
+      <div class="field-photo-list" id="fieldPhotoList"></div>
+      <p class="form-hint history-note">※ 장수 제한 없이 여러 장 동시 첨부 가능합니다. 태그(고객 전달 / 수리 전 / 수리 후 / {{ ui_labels.report_parts }})를 지정하면 AS보고서에 자동 분류됩니다.</p>
+    </div>
+  </section>
+
+  <!-- 6. 처리 결과 -->
+  <section class="form-card history-section">
+    <div class="form-card-header">6. 처리 결과</div>
+    <div class="form-card-body">
+      <div class="form-grid form-grid-3">
+        <div class="form-group">
+          <label class="form-label">재수리 여부</label>
+          <div class="toggle-group" id="reRepairToggle">
+            <button type="button" class="toggle-btn active" data-value="N">N</button>
+            <button type="button" class="toggle-btn" data-value="Y">Y</button>
+          </div>
+          <input type="hidden" name="re_repair" id="reRepair" value="N">
+          <span class="form-hint" id="reRepairAutoHint" hidden>재수리 자동제안: 과거 완료 이력 있음</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">AS 상태 <span class="required">*</span></label>
+          <select name="status" id="asStatus" class="form-select" required>
+            <option value="in_progress" selected>진행중</option>
+            {% if not is_rods %}
+            <option value="parts_waiting">부품대기</option>
+            {% endif %}
+            <option value="on_hold">보류</option>
+            <option value="completed">완료</option>
+          </select>
+          <span class="form-hint" id="warrantyHint"></span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">비고</label>
+          <input type="text" name="remarks" id="remarks" class="form-input" placeholder="특이사항">
+        </div>
+      </div>
+
+      <div class="result-panels">
+        <div class="result-panel result-panel-billing">
+          <strong>청구 비용</strong>
+          <p id="billingNote">접수 건을 불러오면 청구 정보가 표시됩니다.</p>
+          <div id="billingControls" class="billing-controls" hidden>
+            <div class="billing-mode-row">
+              <label class="checkbox-item">
+                <input type="radio" name="billing_mode" id="billingModeMargin" value="margin" checked>
+                <span>마진율 자동계산</span>
+              </label>
+              <label class="checkbox-item">
+                <input type="radio" name="billing_mode" id="billingModeManual" value="manual">
+                <span>직접 입력(협의가)</span>
+              </label>
+            </div>
+            <div id="billingMarginRow" class="billing-row">
+              <label>마진율(%)
+                <input type="number" class="form-input" name="billing_margin_rate" id="billingMarginRate"
+                       value="30" min="0" step="0.1" style="width:90px;display:inline-block">
+              </label>
+              <span class="form-hint">부품합계 × (1 + 마진율/100) = <strong id="billingPreview">0</strong>원</span>
+            </div>
+            <div id="billingManualRow" class="billing-row" hidden>
+              <label>청구금액(원)
+                <input type="text" class="form-input" name="billing_cost_manual" id="billingManualAmount"
+                       placeholder="예: 150000" style="width:140px;display:inline-block">
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="result-panel result-panel-support">
+          <strong>처리 중 추가 지원 필요 시</strong>
+          <p class="form-hint support-stage-hint">체크 후 「공유하기/보고하기」를 누르면 즉시 반영됩니다. 버튼을 쓰지 않아도 임시 저장·완료 처리 시 함께 반영됩니다.</p>
+          <div id="supportFeedbackBadges" class="support-feedback-badges" hidden></div>
+          <div class="checkbox-group" style="margin-top:8px">
+            {% if is_quality_viewer %}
+            <div class="support-action-row">
+              <label class="checkbox-item">
+                <input type="checkbox" id="supportQuality" disabled>
+                <span>품질팀 지원 요청 (기술지원, 품질판정)</span>
+              </label>
+              <span class="support-shared-mark" id="shareQualityMark">✓ 공유됨</span>
+            </div>
+            {% elif can_request_quality_support %}
+            <div class="support-action-row">
+              <label class="checkbox-item">
+                <input type="checkbox" name="support_quality" id="supportQuality" value="1">
+                <span>품질팀 지원 요청 (기술지원, 품질판정)</span>
+              </label>
+              <button type="button" class="btn btn-outline btn-share-now" id="shareQualityBtn" hidden>공유하기</button>
+              <span class="support-shared-mark" id="shareQualityMark" hidden>✓ 공유됨</span>
+            </div>
+            {% endif %}
+            <div class="support-action-row" id="supportTechWrap" hidden>
+              <label class="checkbox-item">
+                <input type="checkbox" name="support_tech" id="supportTech" value="1">
+                <span>{{ ui_labels.support_tech }}</span>
+              </label>
+              <button type="button" class="btn btn-outline btn-share-now" id="shareTechBtn" hidden>공유하기</button>
+              <span class="support-shared-mark" id="shareTechMark" hidden>✓ 공유됨</span>
+            </div>
+            <p class="form-hint support-stage-hint" id="supportTechStatus" hidden></p>
+            <div class="support-urgent-card" id="supportUrgentCard" hidden>
+              <strong>🚨 긴급 — 품질팀 경유 없이 {{ ui_labels.support_tech }}에 즉시 요청</strong>
+              <p class="form-hint">사유 필수. 기술부에 알림과 함께 품질팀에도 참고 알림이 갑니다.</p>
+              <label class="form-label" for="urgentTechReason">긴급 사유</label>
+              <textarea id="urgentTechReason" class="form-input" rows="2" placeholder="예: 고객 생산라인 정지 중, 오늘 안에 원인 파악 필요"></textarea>
+              <button type="button" class="btn btn-primary" id="urgentTechBtn" style="margin-top:8px;min-height:44px">긴급 직행 요청</button>
+            </div>
+            <p class="form-hint support-stage-hint" id="supportTechUrgentHint" hidden>
+              팀장은 품질팀 미회신 2일 이상일 때 기술공유가 가능합니다. 그 전에는 「긴급 직행」을 사용하세요(사유 필수).
+            </p>
+            {% if not is_support_viewer %}
+            <div class="support-action-row">
+              <label class="checkbox-item">
+                <input type="checkbox" name="support_tech_mgmt" id="supportTechMgmt" value="1">
+                <span>최고기술경영실 보고</span>
+              </label>
+              <button type="button" class="btn btn-outline btn-share-now" id="shareTechMgmtBtn" hidden>보고하기</button>
+              <span class="support-shared-mark" id="shareTechMgmtMark" hidden>✓ 보고됨</span>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if is_support_viewer %}
+        <div class="result-panel support-reply-panel" id="historySupportReplyPanel">
+          <strong>지원요청 회신</strong>
+          <p class="form-hint">건을 불러오면 상태가 「확인함」으로 전환됩니다. 검토 의견만 남기면 「회신완료」를 누르세요. 점검·수리·상세·사진은 아래 「임시 저장」으로 남깁니다.</p>
+          <div id="historySupportStatusRow" class="support-feedback-badges"></div>
+          <label class="form-label" for="historySupportReply">검토 의견</label>
+          <textarea id="historySupportReply" class="form-input" rows="4" placeholder="회신 또는 반려 사유를 입력하세요"></textarea>
+          <div class="support-reply-actions" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px">
+            <button type="button" class="btn btn-primary" id="historySupportReplyBtn" style="min-height:44px">회신완료</button>
+            {% if is_support_viewer and not is_quality_viewer %}
+            <button type="button" class="btn btn-outline" id="historySupportRejectBtn" style="min-height:44px">품질팀으로 반려</button>
+            {% endif %}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="form-actions history-form-actions" id="historyFormActions">
+        {% if is_support_viewer %}
+        <p class="form-hint" id="supportFieldDraftHint">
+          지원부서는 <strong>검토의견 회신</strong>과 <strong>점검·수리·상세·사진 임시저장</strong>만 가능합니다.
+          <strong>완료 처리</strong>는 AS담당자만 할 수 있습니다.
+        </p>
+        <button type="button" class="btn btn-outline" id="draftBtn">임시 저장</button>
+        {% else %}
+        <button type="button" class="btn btn-outline" id="draftBtn">임시 저장</button>
+        <button type="button" class="btn btn-primary" id="billingSaveBtn" hidden>청구 비용 저장</button>
+        <button type="button" class="btn btn-primary" id="completeBtn" disabled>완료 처리 &amp; 저장</button>
+        {% endif %}
+      </div>
+      {% if is_support_viewer %}
+      <p class="form-hint history-note" style="text-align:right;margin-top:12px">
+        ※ 검토의견만 남길 때는 위 「회신완료」를 사용하세요.
+        현장 점검·수리 내용을 남길 때는 「임시 저장」을 사용합니다.
+      </p>
+      {% else %}
+      <p class="form-hint history-note" style="text-align:right;margin-top:12px">
+        ※ 진행중·부품대기·보류는 <strong>임시 저장</strong>만 가능합니다.
+        AS 상태를 <strong>완료</strong>로 선택하면 <strong>완료 처리 &amp; 저장</strong>이 활성화됩니다.
+        완료된 건의 <strong>AS 내용 수정·전체 삭제</strong>는 관리자만 가능합니다.
+        등록자·부서장은 <strong>청구 비용</strong>만 조정할 수 있습니다.
+      </p>
+      {% endif %}
+    </div>
+  </section>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const IS_QUALITY_VIEWER = {{ 'true' if is_quality_viewer else 'false' }};
+  const IS_SUPPORT_VIEWER = {{ 'true' if is_support_viewer else 'false' }};
+  const CAN_REQUEST_QUALITY = {{ 'true' if can_request_quality_support else 'false' }};
+  const CAN_SHARE_TECH = {{ 'true' if can_share_tech_support else 'false' }};
+  const IS_SALES_HEAD = {{ 'true' if is_sales_head or current_user_is_sales_head else 'false' }};
+  const IS_TEAM_LEAD = {{ 'true' if is_sales_team_leader else 'false' }};
+  const TECH_DEPT_LABEL = {{ ('기술연구소' if is_rods else '기술부')|tojson }};
+  const receiptSelect = document.getElementById('receiptSelect');
+  const loadBtn = document.getElementById('loadBtn');
+  const form = document.getElementById('historyForm');
+  const partsBody = document.getElementById('partsBody');
+  const partsJson = document.getElementById('partsJson');
+  const existingPhotosJson = document.getElementById('existingPhotosJson');
+  const fieldPhotoInput = document.getElementById('fieldPhotoInput');
+  const fieldPhotoCamera = document.getElementById('fieldPhotoCamera');
+  const fieldPhotoList = document.getElementById('fieldPhotoList');
+  let lastCanEditAs = false;
+  let lastCanSupportDraft = false;
+  function historyReportLink(receiptNo) {
+    const returnUrl = encodeURIComponent(
+      location.pathname + location.search + (location.hash || '')
+    );
+    return `/report?receipt_no=${encodeURIComponent(receiptNo)}&return_url=${returnUrl}`;
+  }
+
+  function saveHistoryDraft() {
+    try {
+      const data = {
+        receipt_no: receiptSelect.value,
+        inspection_date: document.getElementById('inspectionDate')?.value,
+        serial_no: document.getElementById('serialNo')?.value,
+        affiliation: document.getElementById('affiliation')?.value,
+        as_technician: document.getElementById('asTechnician')?.value,
+        ship_out_date: document.getElementById('shipOutDate')?.value,
+        inspection_result: document.getElementById('inspectionResult')?.value,
+        repair_content: document.getElementById('repairContent')?.value,
+        detailed_work: document.getElementById('detailedWork')?.value,
+        remarks: document.getElementById('remarks')?.value,
+        status: document.getElementById('asStatus')?.value,
+        re_repair: document.getElementById('reRepair')?.value,
+        process_location: document.getElementById('processLocation')?.value,
+        support_quality: document.getElementById('supportQuality')?.checked,
+        support_tech: document.getElementById('supportTech')?.checked,
+        support_tech_mgmt: document.getElementById('supportTechMgmt')?.checked,
+        parts,
+        billing_mode: document.getElementById('billingModeManual')?.checked ? 'manual' : 'margin',
+        billing_margin_rate: document.getElementById('billingMarginRate')?.value,
+        billing_cost_manual: document.getElementById('billingManualAmount')?.value,
+      };
+      sessionStorage.setItem('history_work_draft', JSON.stringify(data));
+    } catch (e) { /* ignore */ }
+  }
+
+  function restoreHistoryDraft() {
+    const raw = sessionStorage.getItem('history_work_draft');
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    } finally {
+      sessionStorage.removeItem('history_work_draft');
+    }
+  }
+
+  function escPast(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function renderHistoryPast(targetId, items, emptyText) {
+    const list = document.getElementById(targetId);
+    if (!list) return;
+    if (!items || !items.length) {
+      list.innerHTML = `<p class="form-hint">${emptyText}</p>`;
+      return;
+    }
+    list.innerHTML =
+      '<div class="table-wrap past-history-table-wrap"><table class="receipt-table past-history-table mobile-list-table">'
+      + '<thead><tr><th>접수번호</th><th>접수일</th><th>장비명</th><th>증상</th><th>상태</th></tr></thead><tbody>'
+      + items.slice(0, 10).map(function (it) {
+        return '<tr>'
+          + '<td data-label="접수번호"><a class="receipt-link" href="' + historyReportLink(it.receipt_no) + '" data-hist-draft>'
+          + escPast(it.receipt_no) + '</a></td>'
+          + '<td data-label="접수일">' + escPast(it.receipt_date || '—') + '</td>'
+          + '<td data-label="장비명">' + escPast(it.equipment_name || '—') + '</td>'
+          + '<td data-label="증상">' + escPast(it.symptoms || '—') + '</td>'
+          + '<td data-label="상태">' + escPast(it.status_label || '—') + '</td>'
+          + '</tr>';
+      }).join('')
+      + '</tbody></table></div>';
+  }
+
+  async function loadHistoryPast(customer, equipment, exclude) {
+    if (!customer) {
+      renderHistoryPast('historyPastList', [], '');
+      renderHistoryPast('historyPastSameEquip', [], '');
+      return;
+    }
+    try {
+      const res = await fetch(
+        `/api/past-history?customer=${encodeURIComponent(customer)}`
+        + `&equipment=${encodeURIComponent(equipment || '')}`
+        + `&exclude=${encodeURIComponent(exclude || '')}`
+      );
+      const data = await res.json();
+      renderHistoryPast('historyPastList', data.same_customer || [], '과거 이력이 없습니다.');
+      renderHistoryPast(
+        'historyPastSameEquip',
+        data.same_equipment || [],
+        '동일 장비 과거 이력이 없습니다.'
+      );
+    } catch (e) {
+      renderHistoryPast('historyPastList', [], '');
+      renderHistoryPast('historyPastSameEquip', [], '');
+    }
+  }
+
+  async function refreshWarranty() {
+    const ship = loadedShipDate || '';
+    const inspect = document.getElementById('inspectionDate')?.value || '';
+    const warHint = document.getElementById('warrantyHint');
+    if (!warHint) return;
+    try {
+      const res = await fetch(
+        `/api/warranty?ship_date=${encodeURIComponent(ship)}&inspect_date=${encodeURIComponent(inspect)}`
+      );
+      const data = await res.json();
+      warHint.textContent = data.label ? `워런티: ${data.label}` : '';
+    } catch (e) { /* ignore */ }
+  }
+
+  async function refreshReRepairSuggest() {
+    const customer = document.getElementById('infoCustomer')?.textContent || '';
+    const equipment = document.getElementById('infoEquipment')?.textContent || '';
+    const serial = document.getElementById('serialNo')?.value || '';
+    const exclude = receiptSelect.value || '';
+    const reHint = document.getElementById('reRepairAutoHint');
+    if (!reHint || customer === '—' || !customer) return;
+    try {
+      const res = await fetch(
+        `/api/re-repair-suggest?customer=${encodeURIComponent(customer)}`
+        + `&equipment=${encodeURIComponent(equipment)}`
+        + `&serial=${encodeURIComponent(serial)}`
+        + `&exclude=${encodeURIComponent(exclude)}`
+      );
+      const data = await res.json();
+      const matched = data.matched || [];
+      reHint.hidden = !(data.suggested === 'Y' && matched.length);
+      if (!reHint.hidden) {
+        reHint.textContent = '재수리 자동제안: 과거 완료 이력 있음'
+          + (matched.length ? ` (${matched.join(', ')})` : '');
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  let loadedShipDate = '';
+  let loadedCustomerName = '';
+  let loadedEquipmentName = '';
+  let loadedAssignedAs = '';
+  let loadedAssignedName = '';
+  const CURRENT_PERSON_ID = {{ (current_person_id or '')|tojson }};
+  const CURRENT_USER_NAME = {{ (current_user_name or current_user or '')|tojson }};
+
+  function confirmIfOtherAssignee() {
+    // 미지정 건은 확인 없이 self-assign
+    if (!loadedAssignedAs && !loadedAssignedName) return true;
+    if (CURRENT_PERSON_ID && loadedAssignedAs && loadedAssignedAs === CURRENT_PERSON_ID) {
+      return true;
+    }
+    const tech = (document.getElementById('asTechnician').value || '').trim();
+    const assignedName = (loadedAssignedName || '').trim();
+    const me = (CURRENT_USER_NAME || tech || '').trim();
+    if (assignedName && me) {
+      const a0 = assignedName.split(/\s+/)[0];
+      const m0 = me.split(/\s+/)[0];
+      if (assignedName === me || assignedName.startsWith(m0) || me.startsWith(a0)) {
+        return true;
+      }
+    }
+    const label = assignedName || loadedAssignedAs;
+    return confirm(
+      `지정된 AS 담당자는 "${label}"입니다.\n`
+      + `AS전담·접수+AS 계정이 저장하면 서비스담당자가 본인으로 갱신됩니다.\n`
+      + `품질팀·기술부·부서장·관리자 저장 시에는 담당자가 바뀌지 않습니다.\n계속하시겠습니까?`
+    );
+  }
+
+  let parts = [];
+  let existingPhotos = [];
+  let pendingFiles = []; // {file, tag, previewUrl}
+  let photoFilter = 'all';
+  const PHOTO_TAG_OPTIONS = [
+    { value: 'customer', label: '고객 전달' },
+    { value: 'before', label: '수리 전' },
+    { value: 'after', label: '수리 후' },
+    { value: 'parts', label: {{ ui_labels.report_parts|tojson }} },
+  ];
+  const PHOTO_TAG_SET = new Set(PHOTO_TAG_OPTIONS.map(t => t.value));
+
+  function normalizePhotoTag(tag, fallback = 'before') {
+    return PHOTO_TAG_SET.has(tag) ? tag : fallback;
+  }
+
+  function photoTagOptionsHtml(selected) {
+    return PHOTO_TAG_OPTIONS.map(t =>
+      `<option value="${t.value}" ${selected === t.value ? 'selected' : ''}>${t.label}</option>`
+    ).join('');
+  }
+
+  function fmt(n) {
+    return Number(n || 0).toLocaleString('ko-KR');
+  }
+
+  function setupToggle(groupId, hiddenId) {
+    const group = document.getElementById(groupId);
+    const hidden = document.getElementById(hiddenId);
+    group.querySelectorAll('.toggle-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        group.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        hidden.value = btn.dataset.value;
+      });
+    });
+  }
+  setupToggle('locationToggle', 'processLocation');
+  setupToggle('reRepairToggle', 'reRepair');
+  // 재수리 자동제안은 참고용 — 수동 변경해도 힌트는 유지
+
+  function setToggleValue(groupId, hiddenId, value) {
+    const group = document.getElementById(groupId);
+    const hidden = document.getElementById(hiddenId);
+    hidden.value = value;
+    group.querySelectorAll('.toggle-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.value === value);
+    });
+  }
+
+  function renderParts() {
+    partsBody.innerHTML = '';
+    if (!parts.length) {
+      partsBody.innerHTML = '<tr><td colspan="6" class="text-muted" style="text-align:center;padding:20px">항목을 추가해 주세요.</td></tr>';
+    } else {
+      parts.forEach((p, idx) => {
+        const sub = (Number(p.qty) || 0) * (Number(p.unit_price) || 0);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><input type="text" class="form-input part-name" data-idx="${idx}" value="${p.name || ''}" placeholder="{{ ui_labels.part_name }}"></td>
+          <td><input type="text" class="form-input part-spec" data-idx="${idx}" value="${p.spec || ''}" placeholder="규격"></td>
+          <td><input type="number" class="form-input part-qty" data-idx="${idx}" value="${p.qty || 0}" min="0" step="0.01"></td>
+          <td><input type="number" class="form-input part-price" data-idx="${idx}" value="${p.unit_price || 0}" min="0"></td>
+          <td class="part-subtotal">${fmt(sub)}원</td>
+          <td><button type="button" class="part-remove" data-idx="${idx}">×</button></td>`;
+        partsBody.appendChild(tr);
+      });
+    }
+    updatePartsTotal();
+  }
+
+  function updatePartsTotal() {
+    const total = parts.reduce((s, p) => s + (Number(p.qty) || 0) * (Number(p.unit_price) || 0), 0);
+    document.getElementById('partsTotal').textContent = fmt(total);
+    document.getElementById('partsCountBadge').textContent = `${parts.length}개 항목`;
+    partsJson.value = JSON.stringify(parts);
+    updateBillingPreview(total);
+  }
+
+  function updateBillingPreview(partsTotal) {
+    const preview = document.getElementById('billingPreview');
+    if (!preview) return;
+    const rate = Number(document.getElementById('billingMarginRate')?.value || 30);
+    const total = partsTotal != null
+      ? partsTotal
+      : parts.reduce((s, p) => s + (Number(p.qty) || 0) * (Number(p.unit_price) || 0), 0);
+    preview.textContent = fmt(Math.round(total * (1 + rate / 100)));
+  }
+
+  function syncBillingModeUI() {
+    const isManual = document.getElementById('billingModeManual')?.checked;
+    const marginRow = document.getElementById('billingMarginRow');
+    const manualRow = document.getElementById('billingManualRow');
+    if (marginRow) marginRow.hidden = !!isManual;
+    if (manualRow) manualRow.hidden = !isManual;
+  }
+
+  document.getElementById('billingModeMargin')?.addEventListener('change', syncBillingModeUI);
+  document.getElementById('billingModeManual')?.addEventListener('change', syncBillingModeUI);
+  document.getElementById('billingMarginRate')?.addEventListener('input', () => updateBillingPreview());
+
+  partsBody.addEventListener('input', (e) => {
+    const idx = Number(e.target.dataset.idx);
+    if (Number.isNaN(idx) || !parts[idx]) return;
+    if (e.target.classList.contains('part-name')) parts[idx].name = e.target.value;
+    if (e.target.classList.contains('part-spec')) parts[idx].spec = e.target.value;
+    if (e.target.classList.contains('part-qty')) parts[idx].qty = Number(e.target.value) || 0;
+    if (e.target.classList.contains('part-price')) parts[idx].unit_price = Number(e.target.value) || 0;
+    const row = e.target.closest('tr');
+    if (row) {
+      const sub = (Number(parts[idx].qty) || 0) * (Number(parts[idx].unit_price) || 0);
+      const cell = row.querySelector('.part-subtotal');
+      if (cell) cell.textContent = fmt(sub) + '원';
+    }
+    updatePartsTotal();
+  });
+
+  partsBody.addEventListener('click', (e) => {
+    if (!e.target.classList.contains('part-remove')) return;
+    parts.splice(Number(e.target.dataset.idx), 1);
+    renderParts();
+  });
+
+  document.getElementById('addPartBtn').addEventListener('click', () => {
+    parts.push({ name: '', spec: '', qty: 1, unit_price: 0 });
+    renderParts();
+  });
+
+  function syncExistingPhotosJson() {
+    existingPhotosJson.value = JSON.stringify(
+      existingPhotos.map(p => ({
+        url: p.url,
+        tag: normalizePhotoTag(p.tag),
+      }))
+    );
+  }
+
+  function updatePhotoCount() {
+    const total = existingPhotos.length + pendingFiles.length;
+    document.getElementById('photoCountBadge').textContent = `${total}장 첨부됨`;
+  }
+
+  function renderPhotos() {
+    fieldPhotoList.innerHTML = '';
+    const items = [
+      ...existingPhotos.map((p, i) => ({ ...p, kind: 'existing', idx: i })),
+      ...pendingFiles.map((p, i) => ({ url: p.previewUrl, tag: p.tag, kind: 'pending', idx: i })),
+    ].filter(p => photoFilter === 'all' || p.tag === photoFilter);
+
+    items.forEach(item => {
+      const div = document.createElement('div');
+      div.className = 'field-photo-item';
+      div.innerHTML = `
+        <img src="${item.url}" alt="현장 사진">
+        <select class="photo-tag-select" data-kind="${item.kind}" data-idx="${item.idx}">
+          ${photoTagOptionsHtml(normalizePhotoTag(item.tag))}
+        </select>
+        <button type="button" class="photo-remove" data-kind="${item.kind}" data-idx="${item.idx}">×</button>`;
+      fieldPhotoList.appendChild(div);
+    });
+    updatePhotoCount();
+    syncExistingPhotosJson();
+  }
+
+  fieldPhotoList.addEventListener('change', (e) => {
+    if (!e.target.classList.contains('photo-tag-select')) return;
+    const kind = e.target.dataset.kind;
+    const idx = Number(e.target.dataset.idx);
+    if (kind === 'existing') existingPhotos[idx].tag = normalizePhotoTag(e.target.value);
+    else pendingFiles[idx].tag = normalizePhotoTag(e.target.value);
+    syncExistingPhotosJson();
+  });
+
+  fieldPhotoList.addEventListener('click', (e) => {
+    if (!e.target.classList.contains('photo-remove')) return;
+    const kind = e.target.dataset.kind;
+    const idx = Number(e.target.dataset.idx);
+    if (kind === 'existing') existingPhotos.splice(idx, 1);
+    else {
+      URL.revokeObjectURL(pendingFiles[idx].previewUrl);
+      pendingFiles.splice(idx, 1);
+    }
+    renderPhotos();
+  });
+
+  document.querySelectorAll('#photoTagFilters .photo-tag-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#photoTagFilters .photo-tag-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      photoFilter = btn.dataset.filter;
+      renderPhotos();
+    });
+  });
+
+  async function optimizeFieldPhoto(file) {
+    if (!file.type.startsWith('image/') || file.type === 'image/gif' || file.size <= 1024 * 1024) {
+      return file;
+    }
+    let imageSource;
+    let objectUrl;
+    try {
+      if ('createImageBitmap' in window) {
+        imageSource = await createImageBitmap(file);
+      } else {
+        objectUrl = URL.createObjectURL(file);
+        imageSource = await new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = reject;
+          image.src = objectUrl;
+        });
+      }
+      const maxSize = 1600;
+      const scale = Math.min(1, maxSize / Math.max(imageSource.width, imageSource.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(imageSource.width * scale));
+      canvas.height = Math.max(1, Math.round(imageSource.height * scale));
+      canvas.getContext('2d').drawImage(imageSource, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.78));
+      if (!blob || blob.size >= file.size) return file;
+      const baseName = file.name.replace(/\.[^.]+$/, '');
+      return new File([blob], `${baseName}.jpg`, {
+        type: 'image/jpeg',
+        lastModified: file.lastModified,
+      });
+    } catch {
+      return file;
+    } finally {
+      if (imageSource && imageSource.close) imageSource.close();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    }
+  }
+
+  async function addPendingPhotos(fileList) {
+    const files = Array.from(fileList || []).filter(f => f && f.type && f.type.startsWith('image/'));
+    if (!files.length) return;
+    const badge = document.getElementById('photoCountBadge');
+    const prevBadge = badge ? badge.textContent : '';
+    if (badge) badge.textContent = `사진 ${files.length}장 최적화 중...`;
+    const tag = normalizePhotoTag(photoFilter === 'all' ? 'before' : photoFilter);
+    for (const original of files) {
+      const file = await optimizeFieldPhoto(original);
+      pendingFiles.push({
+        file,
+        tag,
+        previewUrl: URL.createObjectURL(file),
+      });
+    }
+    if (badge) badge.textContent = prevBadge;
+    renderPhotos();
+  }
+
+  fieldPhotoInput?.addEventListener('change', () => {
+    addPendingPhotos(fieldPhotoInput.files);
+    fieldPhotoInput.value = '';
+  });
+  fieldPhotoCamera?.addEventListener('change', () => {
+    addPendingPhotos(fieldPhotoCamera.files);
+    fieldPhotoCamera.value = '';
+  });
+
+  async function loadReceipt() {
+    const no = receiptSelect.value;
+    if (!no) {
+      alert('접수번호를 선택하세요.');
+      return;
+    }
+    loadBtn.disabled = true;
+    loadBtn.textContent = '불러오는 중...';
+    try {
+      const res = await fetch(`/api/history/${encodeURIComponent(no)}`);
+      const data = await res.json();
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+      if (data.can_claim_unassigned) {
+        const me = CURRENT_USER_NAME || '본인';
+        if (!confirm('미지정 건입니다.\n' + me + ' 님을 AS담당자로 지정하고 이력을 진행할까요?')) {
+          alert('지정을 취소했습니다. 다른 담당자가 먼저 지정하면 해당 담당자로 진행됩니다.');
+          return;
+        }
+        const fd = new FormData();
+        fd.append('receipt_no', no);
+        const claimRes = await fetch('/api/history/claim', { method: 'POST', body: fd });
+        const claimData = await claimRes.json().catch(function () { return {}; });
+        if (!claimRes.ok) {
+          alert(claimData.error || '담당자 지정에 실패했습니다.');
+          return;
+        }
+        if (claimData.message) alert(claimData.message);
+        const res2 = await fetch(`/api/history/${encodeURIComponent(no)}`);
+        const data2 = await res2.json();
+        if (data2.error) {
+          alert(data2.error);
+          return;
+        }
+        fillForm(data2);
+        return;
+      }
+      fillForm(data);
+    } catch {
+      alert('접수 건을 불러오지 못했습니다.');
+    } finally {
+      loadBtn.disabled = false;
+      loadBtn.textContent = '불러오기';
+    }
+  }
+
+  function applyHistoryLock(d) {
+    const hidden = document.getElementById('historyUpdatedAt');
+    const meta = document.getElementById('historyLockMeta');
+    const token = (d && d.history_updated_at) || '';
+    if (hidden) hidden.value = token;
+    if (meta) {
+      meta.textContent = (d && d.history_updated_display)
+        ? ('마지막 수정: ' + d.history_updated_display)
+        : '마지막 수정: 아직 저장된 이력 없음';
+    }
+  }
+
+  function fillForm(d) {
+    applyHistoryLock(d);
+    document.getElementById('customerInfoBox').hidden = false;
+    document.getElementById('infoCustomer').textContent = d.customer_name || '—';
+    document.getElementById('infoEquipment').textContent = d.equipment_name || '—';
+    {% if is_rods %}
+    document.getElementById('serialNo').value = d.product_identity || [d.equipment_name, d.spec, d.lot].filter(Boolean).join(' / ');
+    {% endif %}
+    document.getElementById('infoSymptoms').textContent = d.symptoms || '—';
+    document.getElementById('infoCharge').textContent = d.charge_label || '—';
+    loadHistoryPast(d.customer_name || '', d.equipment_name || '', d.receipt_no || '');
+
+    document.getElementById('inspectionDate').value = d.inspection_date || '';
+    const aff = document.getElementById('affiliation');
+    const affDefault = {{ default_affiliation|tojson }};
+    const nextAff = d.affiliation || affDefault;
+    if (aff) {
+      const hasOption = Array.from(aff.options).some((opt) => opt.value === nextAff);
+      aff.value = hasOption ? nextAff : affDefault;
+    }
+    document.getElementById('asTechnician').value = d.as_technician || '';
+    {% if not is_rods %}
+    document.getElementById('serialNo').value = d.serial_no || '';
+    {% endif %}
+    loadedShipDate = d.ship_date || '';
+    loadedCustomerName = d.customer_name || '';
+    loadedEquipmentName = d.equipment_name || '';
+    document.getElementById('shipOutDate').value = d.ship_out_date || '';
+    document.getElementById('inspectionResult').value = d.inspection_result || '';
+    document.getElementById('repairContent').value = d.repair_content || '';
+    document.getElementById('detailedWork').value = d.detailed_work || '';
+    document.getElementById('asStatus').value =
+      (d.status === 'received' || d.status === 'draft') ? 'in_progress' : (d.status || 'in_progress');
+    document.getElementById('remarks').value = d.remarks || '';
+    document.getElementById('billingNote').textContent = d.billing_note || '';
+    syncSupportStageUI(d);
+
+    const billingControls = document.getElementById('billingControls');
+    const isPaid = (d.charge_type || '') === 'paid';
+    if (billingControls) billingControls.hidden = !isPaid;
+    if (isPaid) {
+      const isManual = !!Number(d.billing_manual || 0);
+      const modeMargin = document.getElementById('billingModeMargin');
+      const modeManual = document.getElementById('billingModeManual');
+      if (modeMargin && modeManual) {
+        modeMargin.checked = !isManual;
+        modeManual.checked = isManual;
+      }
+      const rateEl = document.getElementById('billingMarginRate');
+      if (rateEl) {
+        const mr = d.billing_margin_rate;
+        rateEl.value = (mr === null || mr === undefined || mr === '') ? '30' : String(mr);
+      }
+      const amountEl = document.getElementById('billingManualAmount');
+      if (amountEl) {
+        amountEl.value = d.billing_cost != null ? String(d.billing_cost) : '';
+      }
+      syncBillingModeUI();
+      updateBillingPreview();
+    }
+
+    setToggleValue('locationToggle', 'processLocation', d.process_location || 'field');
+    setToggleValue('reRepairToggle', 'reRepair', d.re_repair || 'N');
+    loadedAssignedAs = d.assigned_as_staff || '';
+    loadedAssignedName = d.assigned_as_name || '';
+    const reHint = document.getElementById('reRepairAutoHint');
+    if (reHint) {
+      reHint.hidden = !d.re_repair_auto;
+      if (d.re_repair_auto) {
+        reHint.textContent = '재수리 자동제안: 과거 완료 이력 있음'
+          + (d.re_repair_matched && d.re_repair_matched.length
+            ? ` (${d.re_repair_matched.join(', ')})`
+            : '');
+      }
+    }
+    const warHint = document.getElementById('warrantyHint');
+    if (warHint) {
+      warHint.textContent = d.warranty_label
+        ? `워런티: ${d.warranty_label}`
+        : '';
+    }
+
+    lastCanEditAs = false;
+    lastCanSupportDraft = false;
+
+    function applyHistoryFieldLock(d) {
+      const locked = !!d.is_locked;
+      const canEditAs = !!d.can_edit_as_content;
+      const canEditBilling = !!d.can_edit_billing;
+      const canSupportDraft = !!(IS_SUPPORT_VIEWER && d.can_support_field_draft && !locked);
+      const billingOnly = !!d.billing_only_mode;
+      lastCanEditAs = canEditAs;
+      lastCanSupportDraft = canSupportDraft;
+      const billingFieldIds = new Set([
+        'billingModeMargin', 'billingModeManual', 'billingMarginRate', 'billingManualAmount',
+      ]);
+      const shareIds = new Set(['supportTech', 'shareTechBtn', 'shareQualityBtn', 'shareTechMgmtBtn', 'supportQuality', 'supportTechMgmt']);
+      // 검토의견 회신 컨트롤 — 지원부서 잠금 예외
+      const supportReplyIds = new Set([
+        'historySupportReply', 'historySupportReplyBtn', 'historySupportRejectBtn',
+      ]);
+      // 현장지원 임시저장 허용 필드
+      const supportFieldIds = new Set([
+        'inspectionResult', 'repairContent', 'detailedWork',
+        'inspectionDate',
+        'fieldPhotoInput', 'fieldPhotoCamera',
+      ]);
+      form.querySelectorAll('input, select, textarea, button').forEach(el => {
+        if (el.id === 'receiptSelect' || el.id === 'loadBtn') return;
+        if (el.type === 'hidden') return;
+        if (supportReplyIds.has(el.id)) {
+          // syncSupportReplyPanel에서 최종 활성/비활성 결정
+          return;
+        }
+        if (el.id === 'billingSaveBtn') {
+          el.hidden = !billingOnly;
+          el.disabled = !canEditBilling;
+          return;
+        }
+        if (el.id === 'draftBtn' || el.id === 'completeBtn') {
+          el.hidden = billingOnly;
+          return;
+        }
+        if (billingFieldIds.has(el.id)) {
+          el.disabled = !canEditBilling || IS_SUPPORT_VIEWER;
+          return;
+        }
+        if (shareIds.has(el.id) && (IS_QUALITY_VIEWER || CAN_REQUEST_QUALITY || !IS_SUPPORT_VIEWER)) {
+          if (el.id === 'supportQuality' && IS_QUALITY_VIEWER) {
+            el.disabled = true;
+            return;
+          }
+          el.disabled = locked || !canEditAs;
+          return;
+        }
+        if (IS_SUPPORT_VIEWER) {
+          if (supportFieldIds.has(el.id) || (el.closest && el.closest('#fieldPhotoList'))) {
+            el.disabled = !canSupportDraft;
+            return;
+          }
+          // 사진 태그 필터 버튼 등은 허용
+          if (el.closest && el.closest('#photoTagFilters')) {
+            el.disabled = !canSupportDraft;
+            return;
+          }
+          el.disabled = true;
+          return;
+        }
+        el.disabled = !canEditAs || IS_SUPPORT_VIEWER;
+      });
+      const addPartBtn = document.getElementById('addPartBtn');
+      if (addPartBtn) addPartBtn.disabled = !canEditAs || IS_SUPPORT_VIEWER;
+      partsBody.querySelectorAll('input, button').forEach(el => {
+        el.disabled = !canEditAs || IS_SUPPORT_VIEWER;
+      });
+
+      const draftBtn = document.getElementById('draftBtn');
+      const completeBtn = document.getElementById('completeBtn');
+      const billingSaveBtn = document.getElementById('billingSaveBtn');
+      if (IS_SUPPORT_VIEWER) {
+        if (draftBtn) {
+          draftBtn.hidden = false;
+          draftBtn.disabled = !canSupportDraft;
+        }
+        if (completeBtn) {
+          completeBtn.hidden = true;
+          completeBtn.disabled = true;
+        }
+        if (billingSaveBtn) billingSaveBtn.hidden = true;
+      } else if (billingOnly) {
+        if (draftBtn) draftBtn.disabled = true;
+        if (completeBtn) completeBtn.disabled = true;
+        if (billingSaveBtn) billingSaveBtn.disabled = !canEditBilling;
+      } else if (!canEditAs) {
+        if (draftBtn) draftBtn.disabled = true;
+        if (completeBtn) completeBtn.disabled = true;
+      } else if (locked) {
+        if (draftBtn) draftBtn.disabled = true;
+        if (completeBtn) completeBtn.disabled = true;
+      } else {
+        syncSaveButtons();
+      }
+      // 잠금 후 회신 패널 다시 동기화(검토의견 입력 가능)
+      syncSupportReplyPanel(d);
+    }
+
+    parts = (d.parts || []).map(p => ({
+      name: p.name || '',
+      qty: p.qty || 0,
+      unit_price: p.unit_price || 0,
+    }));
+    if (!parts.length) parts = [];
+    renderParts();
+
+    pendingFiles.forEach(p => URL.revokeObjectURL(p.previewUrl));
+    pendingFiles = [];
+    existingPhotos = (d.photos || []).map(p => ({
+      url: p.url,
+      tag: normalizePhotoTag(p.tag || 'before'),
+    }));
+    renderPhotos();
+
+    // 보고서에서 돌아온 경우 임시 입력값 복원
+    const draft = restoreHistoryDraft();
+    if (draft && draft.receipt_no === d.receipt_no) {
+      if (draft.inspection_date) document.getElementById('inspectionDate').value = draft.inspection_date;
+      if (draft.serial_no != null) document.getElementById('serialNo').value = draft.serial_no;
+      if (draft.affiliation) {
+        const affEl = document.getElementById('affiliation');
+        if (affEl && Array.from(affEl.options).some((opt) => opt.value === draft.affiliation)) {
+          affEl.value = draft.affiliation;
+        }
+      }
+      if (draft.as_technician) document.getElementById('asTechnician').value = draft.as_technician;
+      if (draft.ship_out_date != null) document.getElementById('shipOutDate').value = draft.ship_out_date;
+      if (draft.inspection_result != null) document.getElementById('inspectionResult').value = draft.inspection_result;
+      if (draft.repair_content != null) document.getElementById('repairContent').value = draft.repair_content;
+      if (draft.detailed_work != null) document.getElementById('detailedWork').value = draft.detailed_work;
+      if (draft.remarks != null) document.getElementById('remarks').value = draft.remarks;
+      if (draft.status) document.getElementById('asStatus').value = draft.status;
+      if (draft.re_repair) setToggleValue('reRepairToggle', 'reRepair', draft.re_repair);
+      if (draft.process_location) setToggleValue('locationToggle', 'processLocation', draft.process_location);
+      if (draft.parts) {
+        parts = draft.parts;
+        renderParts();
+      }
+      if (draft.billing_mode === 'manual') {
+        document.getElementById('billingModeManual').checked = true;
+        document.getElementById('billingModeMargin').checked = false;
+      }
+      if (draft.billing_margin_rate) document.getElementById('billingMarginRate').value = draft.billing_margin_rate;
+      if (draft.billing_cost_manual != null) document.getElementById('billingManualAmount').value = draft.billing_cost_manual;
+      syncBillingModeUI();
+      updateBillingPreview();
+    }
+    applyHistoryFieldLock(d);
+  }
+
+  function setShareRow(checked, already, btn, mark, markText) {
+    if (mark) {
+      mark.hidden = !already;
+      if (already && markText) mark.textContent = markText;
+    }
+    if (btn) btn.hidden = !!(already || !checked);
+  }
+
+  const SUPPORT_STATUS_LABELS = {
+    waiting: '대기중',
+    confirmed: '확인함',
+    replied: '회신완료',
+    rejected: '반려됨',
+  };
+
+  function feedbackEntryOverdue(entry) {
+    const st = (entry && entry.status) || 'waiting';
+    if (st !== 'waiting' && st !== 'confirmed') return false;
+    const shared = String((entry && entry.shared_at) || '').slice(0, 19);
+    if (!shared) return false;
+    const dt = new Date(shared.replace(' ', 'T'));
+    if (Number.isNaN(dt.getTime())) return false;
+    const days = Math.floor((Date.now() - dt.getTime()) / 86400000);
+    return days >= 2;
+  }
+
+  function renderSupportFeedbackBadges(d, targetEl) {
+    const el = targetEl || document.getElementById('supportFeedbackBadges');
+    if (!el) return;
+    const fb = (d && d.support_feedback) || {};
+    const chunks = [];
+    function pushBadge(kind, label, sharedFlag) {
+      const entry = fb[kind] || {};
+      const hasShare = !!(sharedFlag || entry.status);
+      if (!hasShare) return;
+      const status = entry.status || (sharedFlag ? 'waiting' : '');
+      if (!status) return;
+      const overdue = feedbackEntryOverdue(entry);
+      const urgent = !!(entry.urgent);
+      let html = `<span class="support-feedback-item"><strong>${label}</strong> `;
+      html += `<span class="support-badge status-${status}">${SUPPORT_STATUS_LABELS[status] || status}</span>`;
+      if (urgent) html += ` <span class="support-badge is-urgent">🚨 긴급직행</span>`;
+      if (overdue) html += ` <span class="support-badge is-overdue">⚠ 지연</span>`;
+      html += `</span>`;
+      const note = (entry.reopen_note || '').trim();
+      const reply = (entry.reply || '').trim();
+      if (note) html += `<div class="support-feedback-note">${note}</div>`;
+      if (reply && (status === 'replied' || status === 'rejected')) {
+        html += `<div class="support-feedback-note">회신: ${reply}</div>`;
+      }
+      chunks.push(html);
+    }
+    pushBadge('quality', '품질팀', d && d.support_quality);
+    pushBadge('tech', d.tech_dept_label || TECH_DEPT_LABEL, d && d.support_tech);
+    el.innerHTML = chunks.join('');
+    el.hidden = chunks.length === 0;
+  }
+
+  function syncSupportReplyPanel(d) {
+    if (!IS_SUPPORT_VIEWER) return;
+    const panel = document.getElementById('historySupportReplyPanel');
+    const statusRow = document.getElementById('historySupportStatusRow');
+    const replyBox = document.getElementById('historySupportReply');
+    const replyBtn = document.getElementById('historySupportReplyBtn');
+    const rejectBtn = document.getElementById('historySupportRejectBtn');
+    if (!panel) return;
+    // 완료 건 회신은 AS보고서에서만 (이력 잠금 정책 유지)
+    if (d && (d.is_locked || d.status === 'completed')) {
+      panel.hidden = true;
+      return;
+    }
+    const kind = IS_QUALITY_VIEWER ? 'quality' : 'tech';
+    const shared = kind === 'quality' ? !!(d && d.support_quality) : !!(d && d.support_tech);
+    const entry = ((d && d.support_feedback) || {})[kind] || {};
+    const status = entry.status || (shared ? 'waiting' : '');
+    const open = shared || status === 'waiting' || status === 'confirmed';
+    panel.hidden = !open && status !== 'replied' && status !== 'rejected';
+    if (statusRow) {
+      renderSupportFeedbackBadges(d, statusRow);
+      statusRow.hidden = false;
+    }
+    const closed = status === 'replied' || status === 'rejected';
+    if (replyBox) {
+      replyBox.value = entry.reply || '';
+      replyBox.disabled = closed || !shared;
+      replyBox.readOnly = false;
+    }
+    if (replyBtn) {
+      replyBtn.hidden = closed || !shared;
+      replyBtn.disabled = closed || !shared;
+    }
+    if (rejectBtn) {
+      rejectBtn.hidden = closed || IS_QUALITY_VIEWER || !shared;
+      rejectBtn.disabled = closed || IS_QUALITY_VIEWER || !shared;
+    }
+  }
+
+  function syncSupportStageUI(d) {
+    const sq = document.getElementById('supportQuality');
+    const st = document.getElementById('supportTech');
+    const stm = document.getElementById('supportTechMgmt');
+    if (sq) sq.checked = !!(d && d.support_quality);
+    if (st) st.checked = !!(d && d.support_tech);
+    if (stm) stm.checked = !!(d && d.support_tech_mgmt);
+
+    const locked = !!(d && d.is_locked);
+    setShareRow(
+      !!(d && d.support_quality),
+      !!(d && d.support_quality),
+      document.getElementById('shareQualityBtn'),
+      document.getElementById('shareQualityMark'),
+      '✓ 공유됨'
+    );
+
+    const qualityOverdue = !!(d && d.quality_overdue);
+    const canDelayed = !!(d && d.can_share_tech_delayed);
+    const canUrgent = !!(d && d.can_urgent_tech);
+    const showTechForHead = !!(CAN_SHARE_TECH && d && !locked && (
+      IS_SALES_HEAD
+      || (IS_QUALITY_VIEWER && d.support_quality)
+    ));
+    // 팀장: 지연 조건 충족 시에만 일반 「기술부에 공유」행 노출
+    const showTechForLead = !!(IS_TEAM_LEAD && !IS_SALES_HEAD && !locked && (
+      canDelayed || !!(d && d.support_tech)
+    ));
+    const techWrap = document.getElementById('supportTechWrap');
+    if (techWrap) techWrap.hidden = !(showTechForHead || showTechForLead);
+
+    const urgentCard = document.getElementById('supportUrgentCard');
+    if (urgentCard) {
+      urgentCard.hidden = !(IS_TEAM_LEAD && !IS_SALES_HEAD && canUrgent && !locked);
+      const reasonEl = document.getElementById('urgentTechReason');
+      if (reasonEl && urgentCard.hidden) reasonEl.value = '';
+    }
+    const urgentHint = document.getElementById('supportTechUrgentHint');
+    if (urgentHint) {
+      urgentHint.hidden = !(IS_TEAM_LEAD && !IS_SALES_HEAD && !locked && !d.support_tech && !canDelayed);
+    }
+
+    const shareTechBtn = document.getElementById('shareTechBtn');
+    if (shareTechBtn && IS_TEAM_LEAD && !IS_SALES_HEAD && !IS_QUALITY_VIEWER) {
+      shareTechBtn.disabled = !canDelayed && !d.support_tech;
+      shareTechBtn.title = canDelayed
+        ? ''
+        : '품질팀 미회신 2일 이상일 때 일반 공유 가능 (긴급은 「긴급 직행」)';
+    }
+    if (st && IS_TEAM_LEAD && !IS_SALES_HEAD && !IS_QUALITY_VIEWER) {
+      st.disabled = !canDelayed && !d.support_tech;
+    }
+    setShareRow(
+      !!(d && d.support_tech) || canDelayed || showTechForHead,
+      !!(d && d.support_tech),
+      shareTechBtn,
+      document.getElementById('shareTechMark'),
+      '✓ 공유됨'
+    );
+    setShareRow(
+      !!(d && d.support_tech_mgmt),
+      !!(d && d.support_tech_mgmt),
+      document.getElementById('shareTechMgmtBtn'),
+      document.getElementById('shareTechMgmtMark'),
+      '✓ 보고됨'
+    );
+
+    const techStatus = document.getElementById('supportTechStatus');
+    if (techStatus) {
+      if (d && d.support_tech && !(showTechForHead || showTechForLead)) {
+        techStatus.hidden = false;
+        techStatus.textContent = `품질팀이 ${d.tech_dept_label || TECH_DEPT_LABEL}에 공유한 건입니다.`;
+      } else if (IS_QUALITY_VIEWER && d && d.support_quality && !d.support_tech) {
+        techStatus.hidden = false;
+        techStatus.textContent = `기술 지원이 필요하면 ${TECH_DEPT_LABEL}에 공유하세요.`;
+      } else if (IS_SALES_HEAD && d && !d.support_tech && showTechForHead) {
+        techStatus.hidden = false;
+        techStatus.textContent = `${TECH_DEPT_LABEL}에도 바로 공유할 수 있습니다.`;
+      } else if (IS_TEAM_LEAD && !IS_SALES_HEAD && d && !d.support_tech) {
+        techStatus.hidden = false;
+        if (canDelayed) {
+          techStatus.textContent = `품질팀 회신이 2일 이상 지연되어 ${TECH_DEPT_LABEL} 공유가 가능합니다.`;
+        } else if (d.support_quality) {
+          techStatus.textContent = '품질팀 회신 대기 중입니다. 긴급하면 「긴급 직행」을 사용하세요.';
+        } else {
+          techStatus.textContent = '원칙은 품질팀 선행 공유입니다. 급한 건은 「긴급 직행」을 사용하세요.';
+        }
+      } else {
+        techStatus.hidden = true;
+        techStatus.textContent = '';
+      }
+    }
+
+    renderSupportFeedbackBadges(d);
+    syncSupportReplyPanel(d);
+  }
+
+  async function shareSupportNow(kind, checkboxId, btnId, markId, markText) {
+    if (!receiptSelect.value) {
+      alert('접수번호를 선택하고 불러오기 후 공유하세요.');
+      return;
+    }
+    const cb = document.getElementById(checkboxId);
+    if (cb) cb.checked = true;
+    const btn = document.getElementById(btnId);
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch('/api/support-share', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          receipt_no: receiptSelect.value,
+          kind,
+          history_updated_at: document.getElementById('historyUpdatedAt')?.value || '',
+        }),
+      });
+      const data = await res.json();
+      if (data.conflict) {
+        alert(data.error || '다른 담당자가 먼저 저장했습니다. 다시 불러온 뒤 작업하세요.');
+        return;
+      }
+      if (!data.ok) {
+        alert(data.error || '공유에 실패했습니다.');
+        return;
+      }
+      applyHistoryLock(data);
+      if (cb) cb.checked = true;
+      const mark = document.getElementById(markId);
+      if (mark) {
+        mark.hidden = false;
+        mark.textContent = '✓ ' + (data.mark || markText || '공유됨');
+      }
+      if (btn) btn.hidden = true;
+    } catch (err) {
+      alert('공유 요청을 보내지 못했습니다.');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  function prepareSubmit(action) {
+    if (!receiptSelect.value) {
+      alert('접수번호를 선택하고 불러오기 후 저장하세요.');
+      return false;
+    }
+    if (action === 'billing') {
+      formAction.value = action;
+      return true;
+    }
+    const status = document.getElementById('asStatus').value;
+    if (action === 'draft' && status === 'completed') {
+      alert('완료 상태는 임시 저장할 수 없습니다. 진행중·부품대기·보류로 바꾸거나 완료 처리 & 저장을 사용하세요.');
+      return false;
+    }
+    if (action === 'complete' && status !== 'completed') {
+      alert('AS 상태를 「완료」로 선택한 뒤에만 완료 처리가 가능합니다.');
+      return false;
+    }
+    formAction.value = action;
+    partsJson.value = JSON.stringify(parts);
+    syncExistingPhotosJson();
+
+    // pending files를 form에 첨부
+    const dt = new DataTransfer();
+    pendingFiles.forEach(p => dt.items.add(p.file));
+
+    // 기존 input 대신 동적 input 생성
+    form.querySelectorAll('input[name="field_photos"], input[name="photo_tags"]').forEach(el => el.remove());
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.name = 'field_photos';
+    fileInput.multiple = true;
+    fileInput.hidden = true;
+    fileInput.files = dt.files;
+    form.appendChild(fileInput);
+
+    pendingFiles.forEach(p => {
+      const tagInput = document.createElement('input');
+      tagInput.type = 'hidden';
+      tagInput.name = 'photo_tags';
+      tagInput.value = normalizePhotoTag(p.tag);
+      form.appendChild(tagInput);
+    });
+    return true;
+  }
+
+  function syncSaveButtons() {
+    const status = document.getElementById('asStatus')?.value;
+    const draftBtn = document.getElementById('draftBtn');
+    const completeBtn = document.getElementById('completeBtn');
+    if (!draftBtn) return;
+    const isComplete = status === 'completed';
+    if (IS_SUPPORT_VIEWER) {
+      draftBtn.disabled = !lastCanSupportDraft;
+      if (completeBtn) {
+        completeBtn.hidden = true;
+        completeBtn.disabled = true;
+      }
+      return;
+    }
+    if (!completeBtn) return;
+    draftBtn.disabled = isComplete;
+    completeBtn.disabled = !isComplete;
+  }
+
+  document.getElementById('asStatus').addEventListener('change', syncSaveButtons);
+  document.getElementById('inspectionDate')?.addEventListener('change', refreshWarranty);
+  document.getElementById('serialNo')?.addEventListener('change', refreshReRepairSuggest);
+  document.getElementById('serialNo')?.addEventListener('blur', refreshReRepairSuggest);
+  document.addEventListener('click', (e) => {
+    if (e.target.closest('[data-hist-draft]')) saveHistoryDraft();
+  });
+
+  loadBtn.addEventListener('click', loadReceipt);
+  document.getElementById('draftBtn')?.addEventListener('click', () => {
+    if (!confirmIfOtherAssignee()) {
+      alert('저장이 취소되었습니다.');
+      return;
+    }
+    if (prepareSubmit('draft')) form.submit();
+  });
+  document.getElementById('completeBtn')?.addEventListener('click', () => {
+    if (!confirmIfOtherAssignee()) {
+      alert('저장이 취소되었습니다.');
+      return;
+    }
+    if (!confirm('완료 처리하시겠습니까? 완료 후 AS 처리 내용은 admin만 수정할 수 있습니다.')) {
+      alert('저장이 취소되었습니다.');
+      return;
+    }
+    if (prepareSubmit('complete')) form.submit();
+  });
+  document.getElementById('billingSaveBtn')?.addEventListener('click', () => {
+    if (prepareSubmit('billing')) form.submit();
+  });
+  document.getElementById('supportQuality')?.addEventListener('change', () => {
+    const cb = document.getElementById('supportQuality');
+    const mark = document.getElementById('shareQualityMark');
+    const already = mark && !mark.hidden;
+    setShareRow(!!cb?.checked, !!already, document.getElementById('shareQualityBtn'), mark, '✓ 공유됨');
+  });
+  document.getElementById('supportTech')?.addEventListener('change', () => {
+    const cb = document.getElementById('supportTech');
+    const mark = document.getElementById('shareTechMark');
+    const already = mark && !mark.hidden;
+    setShareRow(!!cb?.checked, !!already, document.getElementById('shareTechBtn'), mark, '✓ 공유됨');
+  });
+  document.getElementById('supportTechMgmt')?.addEventListener('change', () => {
+    const cb = document.getElementById('supportTechMgmt');
+    const mark = document.getElementById('shareTechMgmtMark');
+    const already = mark && !mark.hidden;
+    setShareRow(!!cb?.checked, !!already, document.getElementById('shareTechMgmtBtn'), mark, '✓ 보고됨');
+  });
+  document.getElementById('shareQualityBtn')?.addEventListener('click', () => {
+    shareSupportNow('quality', 'supportQuality', 'shareQualityBtn', 'shareQualityMark', '공유됨');
+  });
+  document.getElementById('shareTechBtn')?.addEventListener('click', () => {
+    shareSupportNow('tech', 'supportTech', 'shareTechBtn', 'shareTechMark', '공유됨');
+  });
+  document.getElementById('urgentTechBtn')?.addEventListener('click', async () => {
+    if (!receiptSelect.value) {
+      alert('접수번호를 선택하고 불러오기 후 공유하세요.');
+      return;
+    }
+    const reasonEl = document.getElementById('urgentTechReason');
+    const reason = (reasonEl?.value || '').trim();
+    if (!reason) {
+      alert('긴급 사유는 필수입니다.');
+      reasonEl?.focus();
+      return;
+    }
+    const btn = document.getElementById('urgentTechBtn');
+    if (btn) btn.disabled = true;
+    try {
+      const fd = new FormData();
+      fd.append('receipt_no', receiptSelect.value);
+      fd.append('reason', reason);
+      const res = await fetch('/api/support/urgent-tech', { method: 'POST', body: fd, credentials: 'same-origin' });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok) {
+        alert('긴급 직행으로 기술 지원을 요청했습니다.');
+        if (reasonEl) reasonEl.value = '';
+        loadBtn?.click();
+      } else {
+        alert(data.error || '긴급 직행 실패');
+      }
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+  document.getElementById('historySupportReplyBtn')?.addEventListener('click', async () => {
+    if (!receiptSelect.value) {
+      alert('접수번호를 선택하세요.');
+      return;
+    }
+    const reply = (document.getElementById('historySupportReply')?.value || '').trim();
+    if (!reply) {
+      alert('검토 의견을 입력하세요.');
+      return;
+    }
+    const kind = IS_QUALITY_VIEWER ? 'quality' : 'tech';
+    const fd = new FormData();
+    fd.append('receipt_no', receiptSelect.value);
+    fd.append('kind', kind);
+    fd.append('reply', reply);
+    const res = await fetch('/api/support/reply', { method: 'POST', body: fd, credentials: 'same-origin' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && (data.ok || data.status === 'replied')) {
+      alert('회신완료 처리했습니다.');
+      loadBtn?.click();
+    } else {
+      alert(data.error || '회신 실패');
+    }
+  });
+  document.getElementById('historySupportRejectBtn')?.addEventListener('click', async () => {
+    if (!receiptSelect.value) {
+      alert('접수번호를 선택하세요.');
+      return;
+    }
+    const note = (document.getElementById('historySupportReply')?.value || '').trim();
+    if (!note) {
+      alert('반려 사유를 입력하세요.');
+      return;
+    }
+    if (!confirm('품질팀으로 반려하시겠습니까?')) return;
+    const fd = new FormData();
+    fd.append('receipt_no', receiptSelect.value);
+    fd.append('note', note);
+    const res = await fetch('/api/support/reject-to-quality', { method: 'POST', body: fd, credentials: 'same-origin' });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.ok !== false) {
+      alert('품질팀으로 반려했습니다.');
+      loadBtn?.click();
+    } else {
+      alert(data.error || '반려 실패');
+    }
+  });
+  document.getElementById('shareTechMgmtBtn')?.addEventListener('click', () => {
+    shareSupportNow('tech_mgmt', 'supportTechMgmt', 'shareTechMgmtBtn', 'shareTechMgmtMark', '보고됨');
+  });
+  syncSaveButtons();
+
+  renderParts();
+  renderPhotos();
+  {% if selected_receipt_no %}
+  loadReceipt();
+  {% endif %}
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#7a1f3d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>{% block title %}{% if product_line == 'rods' %}용접봉 AS 처리 시스템{% else %}웰딩 장비 AS 처리 시스템{% endif %}{% endblock %} - HYUNDAI WELDING</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260911f">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="{% if active_page %}page-{{ active_page }}{% endif %}{% if product_line == 'rods' %} product-rods{% endif %}{% if is_office_account %} is-office-account{% endif %}" data-session-user="{{ current_user_id or '' }}">
+  <header class="header">
+    <div class="header-inner">
+      {% if active_page == 'select' %}
+      <div class="logo-cluster">
+        <a href="{{ url_for('index') }}" class="logo-area">
+          <div class="logo-icon">H</div>
+          <div class="logo-text">
+            <span class="logo-company">HYUNDAI WELDING</span>
+            <span class="logo-system">AS 처리 시스템</span>
+          </div>
+        </a>
+      </div>
+      {% elif product_line == 'rods' %}
+      <div class="logo-cluster">
+        <a href="{{ url_for('rods_home') }}" class="logo-area">
+          <div class="logo-icon">H</div>
+          <div class="logo-text">
+            <span class="logo-company">HYUNDAI WELDING</span>
+            <span class="logo-system">용접봉 AS 처리 시스템</span>
+          </div>
+        </a>
+        <a href="{{ url_for('switch_product') }}" class="product-switch-btn">제품군 변경</a>
+      </div>
+      {% else %}
+      <div class="logo-cluster">
+      <a href="{{ url_for('home') }}" class="logo-area">
+        <div class="logo-icon">H</div>
+        <div class="logo-text">
+          <span class="logo-company">HYUNDAI WELDING</span>
+          <span class="logo-system">웰딩 장비 AS 처리 시스템</span>
+        </div>
+      </a>
+      <a href="{{ url_for('switch_product') }}" class="product-switch-btn">제품군 변경</a>
+      </div>
+      {% endif %}
+
+      <button type="button" class="nav-toggle" id="navToggle" aria-label="메뉴 열기" aria-expanded="false" aria-controls="siteNav">
+        <span class="nav-toggle-bar" aria-hidden="true"></span>
+        <span class="nav-toggle-bar" aria-hidden="true"></span>
+        <span class="nav-toggle-bar" aria-hidden="true"></span>
+      </button>
+
+      <nav class="nav" id="siteNav">
+        {% if active_page == 'select' %}
+        {% elif product_line == 'rods' %}
+        <a href="{{ url_for('rods_home') }}" class="nav-link {% if active_page in ('rods_home', 'home') %}active{% endif %}">홈</a>
+        {% if current_user_is_tech_mgmt %}
+        <a href="{{ url_for('tech_monitor') }}" class="nav-link {% if active_page == 'tech_monitor' %}active{% endif %}">개입·보상</a>
+        <a href="{{ url_for('status_report') }}" class="nav-link {% if active_page == 'status_report' %}active{% endif %}">현황보고</a>
+        {% else %}
+          {% if current_user_can_sales %}
+          <a href="{{ url_for('rods_sales') }}" class="nav-link {% if active_page == 'sales' %}active{% endif %}">영업접수</a>
+          {% endif %}
+          {% if current_user_can_history %}
+          <a href="{{ url_for('rods_history') }}" class="nav-link {% if active_page == 'history' %}active{% endif %}">이력관리</a>
+          {% endif %}
+          {% if current_user_is_sales_head or current_user_is_sales_team_leader %}
+          <a href="{{ url_for('status_report') }}" class="nav-link {% if active_page == 'status_report' %}active{% endif %}">현황보고</a>
+          {% endif %}
+        {% endif %}
+        <a href="{{ url_for('rods_report') }}" class="nav-link {% if active_page == 'report' %}active{% endif %}">AS보고서</a>
+        {% if current_user_role == 'admin' %}
+          <a href="{{ url_for('admin_users') }}" class="nav-link {% if active_page == 'admin' %}active{% endif %}">계정관리</a>
+          <a href="{{ url_for('admin_backup') }}" class="nav-link {% if active_page == 'admin_backup' %}active{% endif %}">DB백업</a>
+        {% endif %}
+        {% else %}
+        <a href="{{ url_for('home') }}" class="nav-link {% if active_page == 'home' %}active{% endif %}">홈</a>
+        {% if current_user_is_tech_mgmt %}
+        <a href="{{ url_for('tech_monitor') }}" class="nav-link {% if active_page == 'tech_monitor' %}active{% endif %}">개입·보상</a>
+        <a href="{{ url_for('status_report') }}" class="nav-link {% if active_page == 'status_report' %}active{% endif %}">현황보고</a>
+        {% elif current_user_is_executive %}
+        <a href="{{ url_for('status_report') }}" class="nav-link {% if active_page == 'status_report' %}active{% endif %}">현황보고</a>
+        {% else %}
+          {% if current_user_can_sales %}
+          <a href="{{ url_for('sales') }}" class="nav-link {% if active_page == 'sales' %}active{% endif %}">영업접수</a>
+          {% endif %}
+          {% if current_user_can_history %}
+          <a href="{{ url_for('history') }}" class="nav-link {% if active_page == 'history' %}active{% endif %}">이력관리</a>
+          {% endif %}
+          {% if current_user_is_sales_head or current_user_is_sales_team_leader %}
+          <a href="{{ url_for('status_report') }}" class="nav-link {% if active_page == 'status_report' %}active{% endif %}">현황보고</a>
+          {% endif %}
+          {% if current_user_can_equip_stats %}
+          <a href="{{ url_for('equip_stats') }}" class="nav-link {% if active_page == 'equip_stats' %}active{% endif %}">장비별 AS통계</a>
+          {% endif %}
+        {% endif %}
+        <a href="{{ url_for('report') }}" class="nav-link {% if active_page == 'report' %}active{% endif %}">AS보고서</a>
+        {% if current_user_role == 'admin' %}
+          <a href="{{ url_for('admin_users') }}" class="nav-link {% if active_page == 'admin' %}active{% endif %}">계정관리</a>
+          <a href="{{ url_for('admin_backup') }}" class="nav-link {% if active_page == 'admin_backup' %}active{% endif %}">DB백업</a>
+        {% endif %}
+        {% endif %}
+      </nav>
+
+      <div class="header-right">
+        {% if not current_user %}
+        <span class="badge-mobile">모바일 접속 가능</span>
+        {% endif %}
+        {% if current_user %}
+          <div class="notif-wrap" id="notifWrap">
+            <button type="button" class="notif-bell" id="notifBellBtn" aria-label="알림" aria-expanded="false" aria-controls="notifPanel">
+              🔔
+              <span class="notif-badge" id="notifBadge" {% if not notification_unread %}hidden{% endif %}>{{ notification_unread }}</span>
+            </button>
+            <div class="notif-backdrop" id="notifBackdrop" hidden></div>
+            <div class="notif-panel" id="notifPanel" hidden role="dialog" aria-label="알림">
+              <div class="notif-panel-head">
+                <strong>알림</strong>
+                <button type="button" class="notif-read-all" id="notifReadAll">전체 읽음</button>
+              </div>
+              <div class="notif-list" id="notifList"><p class="notif-empty">알림이 없습니다.</p></div>
+            </div>
+          </div>
+          <span class="user-info">{{ current_user }}님{% if current_user_role == 'admin' %} (관리자){% endif %}</span>
+          <button type="button" class="btn-password-change" id="passwordOpenBtn">비밀번호</button>
+          <a href="{{ url_for('logout') }}" class="btn-logout">로그아웃</a>
+        {% elif active_page != 'select' %}
+          <button type="button" class="btn-login-open{% if product_line == 'rods' %} is-select-look{% endif %}" id="loginOpenBtn">
+            {% if product_line == 'rods' %}로그인 (담당자 선택){% else %}로그인{% endif %}
+          </button>
+        {% endif %}
+      </div>
+    </div>
+    <div class="nav-backdrop" id="navBackdrop" hidden></div>
+  </header>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div class="global-flashes" id="globalFlashes">
+        {% set flash_seen = [] %}
+        {% for category, message in messages %}
+          {% set flash_key = category ~ '||' ~ message %}
+          {% if flash_key not in flash_seen %}
+            {% if flash_seen.append(flash_key) %}{% endif %}
+            <div class="flash-msg flash-{{ category }}">{{ message }}</div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+  <div class="session-shift-banner" id="sessionShiftBanner" hidden role="alert">
+    다른 탭에서 계정이 변경되어 화면을 새로고침합니다.
+  </div>
+
+  <main class="main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    {% if active_page == 'select' %}
+    Hyundai Welding · AS 처리 시스템
+    {% elif product_line == 'rods' %}
+    Hyundai Welding · 용접봉 AS 처리 시스템
+    {% else %}
+    Hyundai Power &amp; System - 웰딩 장비 AS 처리 시스템 (웹화 목업 v1)
+    {% endif %}
+  </footer>
+
+  {% if not current_user and active_page != 'select' %}
+  <div class="login-modal" id="loginModal" hidden role="dialog" aria-modal="true" aria-labelledby="loginModalTitle">
+    <div class="login-dialog">
+      <button type="button" class="login-modal-close" id="loginCloseBtn" aria-label="닫기">&times;</button>
+      <div class="login-dialog-logo">H</div>
+      <h2 id="loginModalTitle">담당자 로그인</h2>
+      <p>등록된 부서와 담당자 ID를 선택한 뒤 비밀번호를 입력하세요.</p>
+      <form action="{{ url_for('login') }}" method="post" class="login-form" accept-charset="UTF-8">
+        <input type="hidden" name="next" value="{{ request.args.get('next', request.path) }}">
+        <div class="form-group">
+          <label class="form-label" for="loginUsername">부서 · 담당자 ID</label>
+          <select id="loginUsername" name="username" class="form-input form-select login-user-select" required autofocus>
+            <option value="">담당자를 선택하세요</option>
+            {% for dept in login_dropdown %}
+            <optgroup label="{{ dept.team_name }}">
+              {% for member in dept.members %}
+              <option value="{{ member.username }}">{{ member.label }}</option>
+              {% endfor %}
+            </optgroup>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="loginPassword">비밀번호</label>
+          <input type="password" id="loginPassword" name="password" class="form-input"
+                 autocomplete="current-password" required>
+        </div>
+        <label class="login-remember">
+          <input type="checkbox" id="loginRemember" name="remember_credentials">
+          <span>이 기기에서 아이디·비밀번호 저장</span>
+        </label>
+        <p class="login-remember-hint">본인 휴대폰·PC에서만 사용하세요. 공용 PC에는 체크하지 마세요.</p>
+        <button type="submit" class="btn btn-primary btn-block">로그인</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if current_user %}
+  <div class="login-modal" id="passwordModal" hidden role="dialog" aria-modal="true" aria-labelledby="passwordModalTitle">
+    <div class="login-dialog">
+      <button type="button" class="login-modal-close" id="passwordCloseBtn" aria-label="닫기">&times;</button>
+      <div class="login-dialog-logo">H</div>
+      <h2 id="passwordModalTitle">비밀번호 변경</h2>
+      <p>현재 비밀번호 확인 후 새 비밀번호를 입력하세요.</p>
+      <form action="{{ url_for('account_password_change') }}" method="post" class="login-form password-change-form" accept-charset="UTF-8">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+        <div class="form-group">
+          <label class="form-label" for="currentPassword">현재 비밀번호</label>
+          <input type="password" id="currentPassword" name="current_password" class="form-input"
+                 autocomplete="current-password" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="newPassword">새 비밀번호</label>
+          <input type="password" id="newPassword" name="new_password" class="form-input"
+                 minlength="4" autocomplete="new-password" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="confirmPassword">새 비밀번호 확인</label>
+          <input type="password" id="confirmPassword" name="confirm_password" class="form-input"
+                 minlength="4" autocomplete="new-password" required>
+        </div>
+        <p class="login-remember-hint">4자 이상 · 「이 기기 저장」을 쓰는 경우 변경 후 다시 저장됩니다.</p>
+        <button type="submit" class="btn btn-primary btn-block">비밀번호 변경</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  {% block scripts %}{% endblock %}
+  {% if current_user %}
+  <script>
+  (() => {
+    const bell = document.getElementById('notifBellBtn');
+    const panel = document.getElementById('notifPanel');
+    const backdrop = document.getElementById('notifBackdrop');
+    const list = document.getElementById('notifList');
+    const badge = document.getElementById('notifBadge');
+    const readAll = document.getElementById('notifReadAll');
+    const header = document.querySelector('.header');
+    if (!bell || !panel) return;
+
+    function setBadge(n) {
+      if (!badge) return;
+      if (n > 0) {
+        badge.hidden = false;
+        badge.textContent = String(n);
+      } else {
+        badge.hidden = true;
+      }
+    }
+
+    function placePanel() {
+      if (!window.matchMedia('(max-width: 768px)').matches) {
+        panel.style.top = '';
+        if (backdrop) backdrop.style.top = '';
+        return;
+      }
+      if (!header) return;
+      const bottom = Math.ceil(header.getBoundingClientRect().bottom);
+      const top = Math.max(bottom + 6, 56);
+      panel.style.top = top + 'px';
+      if (backdrop) backdrop.style.top = top + 'px';
+    }
+
+    function openPanel() {
+      panel.hidden = false;
+      if (backdrop) backdrop.hidden = false;
+      bell.setAttribute('aria-expanded', 'true');
+      document.body.classList.add('notif-open');
+      placePanel();
+      loadNotifs();
+    }
+
+    function closePanel() {
+      panel.hidden = true;
+      if (backdrop) backdrop.hidden = true;
+      bell.setAttribute('aria-expanded', 'false');
+      document.body.classList.remove('notif-open');
+      panel.style.top = '';
+      if (backdrop) backdrop.style.top = '';
+    }
+
+    async function loadNotifs() {
+      try {
+        const res = await fetch('/api/notifications');
+        const data = await res.json();
+        setBadge(data.unread || 0);
+        if (!data.items || !data.items.length) {
+          list.innerHTML = '<p class="notif-empty">알림이 없습니다.</p>';
+          return;
+        }
+        const CAN_HISTORY = {{ 'true' if current_user_can_history else 'false' }};
+        const IS_RODS_LINE = {{ 'true' if product_line == 'rods' else 'false' }};
+        function notifHref(item) {
+          const no = item.receipt_no || '';
+          const link = item.link || '';
+          if (link.indexOf('/tech-monitor') !== -1) {
+            if (!no) return link;
+            return link.indexOf('?') === -1
+              ? (link + '?focus=' + encodeURIComponent(no))
+              : link;
+          }
+          if (!no) return link || (IS_RODS_LINE ? '/rods' : '/home');
+          if (CAN_HISTORY) {
+            return (IS_RODS_LINE ? '/rods/history' : '/history')
+              + '?receipt_no=' + encodeURIComponent(no);
+          }
+          return (IS_RODS_LINE ? '/rods/report' : '/report')
+            + '?receipt_no=' + encodeURIComponent(no);
+        }
+        list.innerHTML = data.items.map(item => `
+          <a class="notif-item ${item.is_read ? 'is-read' : ''}" href="${notifHref(item)}" data-id="${item.id}">
+            <strong>${item.title}</strong>
+            <span>${item.body || ''}</span>
+          </a>`).join('');
+        list.querySelectorAll('.notif-item').forEach(el => {
+          el.addEventListener('click', () => {
+            fetch(`/api/notifications/${el.dataset.id}/read`, { method: 'POST' });
+          });
+        });
+      } catch (e) {
+        list.innerHTML = '<p class="notif-empty">알림을 불러오지 못했습니다.</p>';
+      }
+    }
+
+    bell.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (panel.hidden) openPanel();
+      else closePanel();
+    });
+    if (backdrop) {
+      backdrop.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closePanel();
+      });
+    }
+    document.addEventListener('click', (e) => {
+      if (panel.hidden) return;
+      if (panel.contains(e.target) || bell.contains(e.target)) return;
+      closePanel();
+    });
+    panel.addEventListener('click', (e) => e.stopPropagation());
+    window.addEventListener('resize', () => {
+      if (!panel.hidden) placePanel();
+    });
+    window.addEventListener('scroll', () => {
+      if (!panel.hidden) placePanel();
+    }, { passive: true });
+    if (readAll) {
+      readAll.addEventListener('click', async () => {
+        await fetch('/api/notifications/read-all', { method: 'POST' });
+        setBadge(0);
+        loadNotifs();
+      });
+    }
+  })();
+  </script>
+  {% endif %}
+  {% if current_user %}
+  <script>
+  (() => {
+    const modal = document.getElementById('passwordModal');
+    const openBtn = document.getElementById('passwordOpenBtn');
+    const closeBtn = document.getElementById('passwordCloseBtn');
+    const form = modal && modal.querySelector('.password-change-form');
+    const currentInput = document.getElementById('currentPassword');
+    const newInput = document.getElementById('newPassword');
+    const confirmInput = document.getElementById('confirmPassword');
+    if (!modal || !openBtn) return;
+
+    const line = document.body.classList.contains('product-rods') ? 'rods' : 'welding';
+    const storageKey = 'pnsAsLoginCreds:' + line;
+
+    function encodeText(value) {
+      try {
+        return btoa(unescape(encodeURIComponent(value)));
+      } catch (err) {
+        return '';
+      }
+    }
+
+    function openPasswordModal() {
+      modal.hidden = false;
+      document.body.classList.add('modal-open');
+      if (currentInput) {
+        currentInput.value = '';
+        currentInput.focus();
+      }
+      if (newInput) newInput.value = '';
+      if (confirmInput) confirmInput.value = '';
+    }
+
+    function closePasswordModal() {
+      modal.hidden = true;
+      document.body.classList.remove('modal-open');
+      openBtn.focus();
+    }
+
+    openBtn.addEventListener('click', openPasswordModal);
+    if (closeBtn) closeBtn.addEventListener('click', closePasswordModal);
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal) closePasswordModal();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !modal.hidden) closePasswordModal();
+    });
+
+    if (form) {
+      form.addEventListener('submit', (event) => {
+        if (newInput && confirmInput && newInput.value !== confirmInput.value) {
+          event.preventDefault();
+          alert('새 비밀번호 확인이 일치하지 않습니다.');
+          return;
+        }
+        try {
+          const raw = localStorage.getItem(storageKey);
+          if (raw && newInput && newInput.value) {
+            const data = JSON.parse(raw);
+            if (data && data.u) {
+              data.p = encodeText(newInput.value);
+              data.t = Date.now();
+              localStorage.setItem(storageKey, JSON.stringify(data));
+            }
+          }
+        } catch (err) {
+          /* ignore */
+        }
+      });
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('password') === '1') {
+      openPasswordModal();
+      params.delete('password');
+      const qs = params.toString();
+      const nextUrl = window.location.pathname + (qs ? ('?' + qs) : '') + window.location.hash;
+      window.history.replaceState({}, '', nextUrl);
+    }
+    if (params.get('password_changed') === '1') {
+      params.delete('password_changed');
+      const qs = params.toString();
+      const nextUrl = window.location.pathname + (qs ? ('?' + qs) : '') + window.location.hash;
+      window.history.replaceState({}, '', nextUrl);
+    }
+  })();
+  </script>
+  {% endif %}
+  {% if not current_user %}
+  <script>
+    (() => {
+      const modal = document.getElementById('loginModal');
+      const openBtn = document.getElementById('loginOpenBtn');
+      const closeBtn = document.getElementById('loginCloseBtn');
+      const form = modal && modal.querySelector('.login-form');
+      const username = document.getElementById('loginUsername');
+      const password = document.getElementById('loginPassword');
+      const remember = document.getElementById('loginRemember');
+      if (!modal || !openBtn || !username || !password || !remember) return;
+
+      const line = document.body.classList.contains('product-rods') ? 'rods' : 'welding';
+      const storageKey = 'pnsAsLoginCreds:' + line;
+
+      function encodeText(value) {
+        try {
+          return btoa(unescape(encodeURIComponent(value)));
+        } catch (err) {
+          return '';
+        }
+      }
+
+      function decodeText(value) {
+        try {
+          return decodeURIComponent(escape(atob(value)));
+        } catch (err) {
+          return '';
+        }
+      }
+
+      function loadSavedCredentials() {
+        let raw = null;
+        try {
+          raw = localStorage.getItem(storageKey);
+        } catch (err) {
+          return;
+        }
+        if (!raw) return;
+        let data;
+        try {
+          data = JSON.parse(raw);
+        } catch (err) {
+          return;
+        }
+        if (!data || !data.u) return;
+        const savedUser = decodeText(data.u);
+        const savedPass = data.p ? decodeText(data.p) : '';
+        if (!savedUser) return;
+        const option = Array.from(username.options).find((opt) => opt.value === savedUser);
+        if (option) {
+          username.value = savedUser;
+        }
+        if (savedPass) {
+          password.value = savedPass;
+        }
+        remember.checked = true;
+      }
+
+      function saveCredentials() {
+        try {
+          if (!remember.checked) {
+            localStorage.removeItem(storageKey);
+            return;
+          }
+          localStorage.setItem(storageKey, JSON.stringify({
+            u: encodeText(username.value || ''),
+            p: encodeText(password.value || ''),
+            t: Date.now()
+          }));
+        } catch (err) {
+          /* private mode 등 저장 불가 시 무시 */
+        }
+      }
+
+      function openLogin() {
+        loadSavedCredentials();
+        modal.hidden = false;
+        document.body.classList.add('modal-open');
+        setTimeout(() => {
+          if (username.value && password.value) {
+            password.focus();
+          } else if (username.value) {
+            password.focus();
+          } else {
+            username.focus();
+          }
+        }, 0);
+      }
+
+      function closeLogin() {
+        modal.hidden = true;
+        document.body.classList.remove('modal-open');
+        openBtn.focus();
+      }
+
+      openBtn.addEventListener('click', openLogin);
+      closeBtn.addEventListener('click', closeLogin);
+      modal.addEventListener('click', (event) => {
+        if (event.target === modal) closeLogin();
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !modal.hidden) closeLogin();
+      });
+      if (form) {
+        form.addEventListener('submit', (event) => {
+          saveCredentials();
+          const btn = form.querySelector('button[type="submit"]');
+          if (form.dataset.submitting === '1') {
+            event.preventDefault();
+            return;
+          }
+          form.dataset.submitting = '1';
+          if (btn) {
+            btn.disabled = true;
+            btn.textContent = '로그인 중…';
+          }
+        });
+      }
+      remember.addEventListener('change', () => {
+        if (!remember.checked) {
+          try {
+            localStorage.removeItem(storageKey);
+          } catch (err) {
+            /* ignore */
+          }
+        }
+      });
+      loadSavedCredentials();
+      {% if request.args.get('login') == '1' %}
+      openLogin();
+      {% endif %}
+    })();
+  </script>
+  {% endif %}
+  <script>
+  (function () {
+    const wrap = document.getElementById('globalFlashes');
+    if (wrap) {
+      const seen = new Set();
+      Array.from(wrap.querySelectorAll('.flash-msg')).forEach((el) => {
+        const key = (el.className || '') + '\n' + (el.textContent || '').trim();
+        if (seen.has(key)) {
+          el.remove();
+          return;
+        }
+        seen.add(key);
+      });
+    }
+  })();
+  </script>
+  <script>
+  (function () {
+    const toggle = document.getElementById('navToggle');
+    const nav = document.getElementById('siteNav');
+    const backdrop = document.getElementById('navBackdrop');
+    if (!toggle || !nav) return;
+
+    function setOpen(open) {
+      document.body.classList.toggle('nav-open', open);
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      toggle.setAttribute('aria-label', open ? '메뉴 닫기' : '메뉴 열기');
+      if (backdrop) backdrop.hidden = !open;
+    }
+
+    toggle.addEventListener('click', () => {
+      setOpen(!document.body.classList.contains('nav-open'));
+    });
+    if (backdrop) {
+      backdrop.addEventListener('click', () => setOpen(false));
+    }
+    nav.querySelectorAll('a').forEach((link) => {
+      link.addEventListener('click', () => setOpen(false));
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    });
+    window.addEventListener('resize', () => {
+      if (window.matchMedia('(min-width: 901px)').matches) setOpen(false);
+    });
+  })();
+  </script>
+  <script>
+  (function () {
+    const pageUser = String(document.body.dataset.sessionUser || '');
+    const banner = document.getElementById('sessionShiftBanner');
+    let reloading = false;
+
+    function currentId(data) {
+      return data && data.user_id != null && data.user_id !== '' ? String(data.user_id) : '';
+    }
+
+    async function checkSessionShift() {
+      if (reloading || document.hidden) return;
+      try {
+        const res = await fetch('/api/session-status', {
+          credentials: 'same-origin',
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const nowUser = currentId(data);
+        if (nowUser === pageUser) return;
+        reloading = true;
+        if (banner) {
+          if (nowUser) {
+            banner.textContent = data.user_name
+              ? `다른 탭에서 ${data.user_name} 계정으로 로그인되어 화면을 새로고침합니다.`
+              : '다른 탭에서 계정이 변경되어 화면을 새로고침합니다.';
+          } else {
+            banner.textContent = '다른 탭에서 로그아웃되어 화면을 새로고침합니다.';
+          }
+          banner.hidden = false;
+        }
+        setTimeout(() => {
+          window.location.reload();
+        }, 700);
+      } catch (err) {
+        /* ignore */
+      }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') checkSessionShift();
+    });
+    window.addEventListener('focus', checkSessionShift);
+    window.addEventListener('pageshow', checkSessionShift);
+  })();
+  </script>
+  <script>
+  (function () {
+    var SYMPTOM_TEXT_SELECTORS = '.home-dash-symptoms-text, .sales-symptoms-text, .symptoms-clamp-text';
+    var CLAMP_TABLE_SELECTOR = '.mobile-list-table, .home-dash-table, .home-recent-table';
+
+    function isMobileListView() {
+      return window.matchMedia('(max-width: 680px)').matches;
+    }
+
+    function shouldClampInTable(table) {
+      if (!table) return false;
+      if (table.classList.contains('home-dash-table') || table.classList.contains('home-recent-table')) {
+        return true;
+      }
+      return table.classList.contains('mobile-list-table') && isMobileListView();
+    }
+
+    function shouldSkipRow(tr) {
+      if (!tr || tr.closest('thead')) return true;
+      if (tr.querySelector('.home-dash-empty, .table-empty')) return true;
+      if (tr.hasAttribute('hidden')) return true;
+      if (tr.dataset.filterEmpty !== undefined || tr.dataset.filterNomatch !== undefined) return true;
+      if (tr.id === 'homeTeamNoMatch' || tr.id === 'homeTeamLoadingRow' || tr.id === 'homeTeamEmptyRow') return true;
+      return false;
+    }
+
+    function unwrapSymptomsClamp(root, tableFilter) {
+      var scope = root || document;
+      scope.querySelectorAll('.symptoms-clamp-wrap').forEach(function (wrap) {
+        if (tableFilter) {
+          var table = wrap.closest('table');
+          if (!table || !table.matches(tableFilter)) return;
+        }
+        var text = wrap.querySelector('.symptoms-clamp-text')
+          || wrap.querySelector('.home-dash-symptoms-text')
+          || wrap.querySelector('.sales-symptoms-text');
+        if (!text || !wrap.parentNode) return;
+        text.classList.remove('symptoms-clamp-text', 'is-expanded');
+        wrap.parentNode.insertBefore(text, wrap);
+        wrap.remove();
+      });
+    }
+
+    function wrapSymptomsText(el) {
+      if (!el || el.closest('.symptoms-clamp-wrap')) return el ? el.closest('.symptoms-clamp-wrap') : null;
+      var text = (el.textContent || '').trim();
+      if (!text || text === '—') return null;
+      var wrap = document.createElement('div');
+      wrap.className = 'symptoms-clamp-wrap';
+      if (!el.classList.contains('symptoms-clamp-text')) {
+        el.classList.add('symptoms-clamp-text');
+      }
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'symptoms-clamp-toggle';
+      btn.textContent = '더보기';
+      btn.setAttribute('aria-expanded', 'false');
+      el.parentNode.insertBefore(wrap, el);
+      wrap.appendChild(el);
+      wrap.appendChild(btn);
+      return wrap;
+    }
+
+    function refreshSymptomsWrap(wrap) {
+      var text = wrap.querySelector('.symptoms-clamp-text');
+      var btn = wrap.querySelector('.symptoms-clamp-toggle');
+      if (!text || !btn) return;
+      if (text.classList.contains('is-expanded')) return;
+      var overflow = text.scrollHeight > text.clientHeight + 2;
+      wrap.classList.toggle('is-clampable', overflow);
+      if (!overflow) {
+        btn.setAttribute('aria-expanded', 'false');
+      }
+    }
+
+    function attachSymptomsClampBehavior(wrap) {
+      if (!wrap || wrap.dataset.clampBound) return;
+      wrap.dataset.clampBound = '1';
+      var text = wrap.querySelector('.symptoms-clamp-text');
+      var btn = wrap.querySelector('.symptoms-clamp-toggle');
+      if (!text || !btn) return;
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var expanded = text.classList.toggle('is-expanded');
+        wrap.classList.toggle('is-expanded', expanded);
+        btn.textContent = expanded ? '접기' : '더보기';
+        btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        if (!expanded) refreshSymptomsWrap(wrap);
+      });
+      refreshSymptomsWrap(wrap);
+    }
+
+    function bindSymptomsClampForTable(table) {
+      if (!table || !shouldClampInTable(table)) return;
+      table.querySelectorAll(SYMPTOM_TEXT_SELECTORS).forEach(function (el) {
+        if (el.closest('.symptoms-clamp-wrap')) return;
+        attachSymptomsClampBehavior(wrapSymptomsText(el));
+      });
+      table.querySelectorAll('td[data-label="증상"], td.home-dash-col-symptoms').forEach(function (td) {
+        if (td.querySelector('.symptoms-clamp-wrap')) return;
+        if (td.querySelector(SYMPTOM_TEXT_SELECTORS)) return;
+        var plain = (td.textContent || '').trim();
+        if (!plain || plain === '—') return;
+        var span = document.createElement('span');
+        span.className = 'symptoms-clamp-text';
+        while (td.firstChild) span.appendChild(td.firstChild);
+        td.appendChild(span);
+        attachSymptomsClampBehavior(wrapSymptomsText(span));
+      });
+    }
+
+    function bindSymptomsClamp(root) {
+      var scope = root || document;
+      scope.querySelectorAll(CLAMP_TABLE_SELECTOR).forEach(function (table) {
+        if (shouldClampInTable(table)) {
+          bindSymptomsClampForTable(table);
+        } else {
+          unwrapSymptomsClamp(table);
+        }
+      });
+    }
+
+    function syncSymptomsClamp(root) {
+      var scope = root || document;
+      scope.querySelectorAll(CLAMP_TABLE_SELECTOR).forEach(function (table) {
+        if (shouldClampInTable(table)) {
+          bindSymptomsClampForTable(table);
+        } else {
+          unwrapSymptomsClamp(table);
+        }
+      });
+    }
+
+    function bindMobileListCards(root) {
+      (root || document).querySelectorAll('.mobile-list-table tbody tr').forEach(function (tr) {
+        if (tr.dataset.mobileCardBound || shouldSkipRow(tr)) return;
+        var link = tr.querySelector('a.receipt-link');
+        if (!link || !link.getAttribute('href')) return;
+        tr.dataset.mobileCardBound = '1';
+        tr.classList.add('is-mobile-list-card');
+        tr.addEventListener('click', function (e) {
+          if (!isMobileListView()) return;
+          if (e.target.closest('button, input, select, textarea, form, label, .receipt-actions-inner, .receipt-delete-btn, .receipt-email-btn, .js-assign-as, .js-toggle-charge, .js-set-billing, .js-parts, .symptoms-clamp-toggle')) return;
+          if (e.target.closest('a.receipt-link, a.btn')) return;
+          if (link.getAttribute('data-claim-unassigned') === '1') {
+            if (!window.confirm('미지정 건입니다. 본인을 AS담당자로 지정하고 AS 이력을 진행할까요?')) return;
+          }
+          window.location.href = link.getAttribute('href');
+        });
+      });
+    }
+
+    function bindMobileListUi(root) {
+      bindMobileListCards(root);
+      syncSymptomsClamp(root);
+    }
+
+    document.addEventListener('click', function (e) {
+      var a = e.target.closest && e.target.closest('a.receipt-link[data-claim-unassigned="1"]');
+      if (!a) return;
+      if (!window.confirm('미지정 건입니다. 본인을 AS담당자로 지정하고 AS 이력을 진행할까요?')) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }, true);
+
+    document.addEventListener('DOMContentLoaded', function () {
+      bindMobileListUi(document);
+    });
+
+    window.addEventListener('resize', function () {
+      syncSymptomsClamp(document);
+    });
+
+    if (window.MutationObserver) {
+      var pending = false;
+      var observer = new MutationObserver(function () {
+        if (pending) return;
+        pending = true;
+        window.requestAnimationFrame(function () {
+          pending = false;
+          bindMobileListUi(document);
+        });
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    }
+  })();
+  </script>
+</body>
+</html>

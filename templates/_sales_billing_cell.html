@@ -1,0 +1,31 @@
+<td data-label="유·무상 / 비용 / 부품" class="sales-billing-cell sales-stack-cell">
+  <div class="sales-billing-panel">
+    <div class="sales-billing-head">
+      <span class="charge-badge charge-{{ r.charge_type }}">{{ r.charge_label }}</span>
+      {% if r.can_ops %}
+      <button type="button" class="sales-billing-btn sales-billing-btn-sm js-toggle-charge"
+              data-no="{{ r.receipt_no }}" data-type="{{ r.charge_type }}">전환</button>
+      {% endif %}
+    </div>
+    <dl class="sales-billing-meta">
+      <div class="sales-billing-meta-row">
+        <dt>비용</dt>
+        <dd class="{% if r.billing_display == '미책정' %}is-pending{% elif r.billing_display == '—' %}is-muted{% endif %}">{{ r.billing_display }}</dd>
+      </div>
+      <div class="sales-billing-meta-row">
+        <dt>부품</dt>
+        <dd class="{% if not r.parts_count %}is-muted{% endif %}">{{ r.parts_summary or '—' }}</dd>
+      </div>
+    </dl>
+    {% if r.can_ops or r.can_edit_parts %}
+    <div class="sales-billing-actions">
+      {% if r.can_ops and r.charge_type == 'paid' %}
+      <button type="button" class="sales-billing-btn js-set-billing" data-no="{{ r.receipt_no }}">가격책정</button>
+      {% endif %}
+      {% if r.can_edit_parts %}
+      <button type="button" class="sales-billing-btn js-parts" data-no="{{ r.receipt_no }}">부품관리</button>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</td>

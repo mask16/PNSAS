@@ -1,0 +1,30 @@
+<td data-label="상태" class="sales-status-cell sales-stack-cell">
+  <span class="status-badge status-{{ r.status_class }}">{{ r.status_label }}</span>
+  {% if r.transfer_pending_id %}
+  <span class="status-badge status-transfer-pending">{{ r.transfer_pending_label or '→ 이관 승인 대기중' }}</span>
+  {% endif %}
+  {% if r.origin_team_tag %}
+  <span class="origin-team-tag">{{ r.origin_team_tag }}</span>
+  {% endif %}
+  {% if r.status == 'completed' and r.completed_display and r.completed_display != '—' %}
+  <span class="sales-stack-sub sales-stack-date">{{ r.completed_display }}</span>
+  {% endif %}
+  <div class="receipt-actions-inner sales-row-actions">
+    {% if r.can_manage %}
+    <a href="{{ url_for('sales', edit=r.receipt_no, _anchor='salesForm') }}"
+       class="receipt-edit-btn">수정</a>
+    {% endif %}
+    {% if r.can_delete %}
+    <form action="{{ url_for('sales_delete', receipt_no=r.receipt_no) }}"
+          method="post"
+          onsubmit="return confirm('{{ r.receipt_no }} 접수 건 전체를 삭제하시겠습니까?\\n접수·이력·부품 기록이 모두 삭제되며 복구할 수 없습니다.');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button type="submit" class="receipt-delete-btn">삭제</button>
+    </form>
+    {% elif r.status == 'completed' or r.delete_locked %}
+    <span class="receipt-owner-only">관리자만 가능</span>
+    {% elif not r.can_manage and not r.can_ops %}
+    <span class="receipt-owner-only">등록자·부서장만 가능</span>
+    {% endif %}
+  </div>
+</td>

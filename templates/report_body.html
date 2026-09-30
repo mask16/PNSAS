@@ -1,0 +1,181 @@
+<div class="report-paper">
+  <h2 class="report-main-title">{{ ui_labels.report_title }}</h2>
+
+  <div class="report-meta-bar">
+    <div class="report-meta-item">
+      <span class="report-meta-label">문서번호</span>
+      <span class="report-meta-value report-doc-no">{{ report.receipt_no }}</span>
+    </div>
+    <div class="report-meta-item">
+      <span class="report-meta-label">작성일자</span>
+      <span class="report-meta-value">{{ report.report_date }}</span>
+    </div>
+    <div class="report-meta-item">
+      <span class="report-meta-label">수리유형</span>
+      <span class="charge-badge charge-{{ report.charge_type }}">{{ report.charge_label }}</span>
+    </div>
+    <div class="report-meta-item">
+      <span class="report-meta-label">AS 상태</span>
+      <span class="status-badge status-{{ report.status_class }}">{{ report.status_label }}</span>
+    </div>
+  </div>
+
+  <div class="report-section">
+    <div class="report-section-header">고객 정보</div>
+    <div class="report-info-grid">
+      <div class="report-info-cell"><span class="report-info-label">고객사명</span><span>{{ report.customer_name }}</span></div>
+      <div class="report-info-cell"><span class="report-info-label">고객 담당자</span><span>{{ report.customer_contact }}</span></div>
+      <div class="report-info-cell"><span class="report-info-label">접수 사무소</span><span>{{ report.office }}</span></div>
+      <div class="report-info-cell"><span class="report-info-label">연락처</span><span>{{ report.phone }}</span></div>
+      <div class="report-info-cell"><span class="report-info-label">{{ ui_labels.product_field }}</span><span>{{ report.equipment_name }}{% if report.spec %} / {{ report.spec }}{% endif %}{% if report.lot %} / {{ report.lot }}{% endif %}</span></div>
+      <div class="report-info-cell"><span class="report-info-label">{{ ui_labels.report_serial }}</span><span>{{ report.serial_no }}</span></div>
+      <div class="report-info-cell"><span class="report-info-label">재수리 여부</span><span>{{ report.re_repair }}</span></div>
+      <div class="report-info-cell"><span class="report-info-label">접수 담당자</span><span>{{ report.receipt_staff_name }}</span></div>
+      <div class="report-info-cell"><span class="report-info-label">AS 담당자</span><span>{{ report.as_technician }}</span></div>
+      <div class="report-info-cell"><span class="report-info-label">최초 출하일/워런티</span><span>{{ report.ship_warranty }}</span></div>
+      <div class="report-info-cell"><span class="report-info-label">점검날짜</span><span>{{ report.inspection_date }}</span></div>
+      <div class="report-info-cell"><span class="report-info-label">소속</span><span>{{ report.affiliation }}</span></div>
+      <div class="report-info-cell"><span class="report-info-label">처리위치/출고일자</span><span>{{ report.process_location }} / {{ report.ship_out_date }}</span></div>
+    </div>
+  </div>
+
+  <div class="report-section">
+    <div class="report-section-header">증상 / 점검결과</div>
+    <div class="report-text-box">{{ report.symptom_text }}</div>
+  </div>
+
+  <div class="report-section">
+    <div class="report-section-header">{{ ui_labels.report_repair }}</div>
+    <div class="report-text-box">{{ report.repair_content }}</div>
+  </div>
+
+  <div class="report-section">
+    <div class="report-section-header">상세 점검 및 작업내용</div>
+    <div class="report-text-box report-text-box-lg">{{ report.detailed_work }}</div>
+  </div>
+
+  <div class="report-section">
+    <div class="report-section-header">{{ ui_labels.report_parts }}</div>
+    <table class="report-parts-table">
+      <thead>
+        <tr><th>{{ ui_labels.part_name }}</th><th>규격</th><th>{{ ui_labels.part_qty }}</th><th>단가</th><th>소계</th></tr>
+      </thead>
+      <tbody>
+        {% if report.parts %}
+          {% for p in report.parts %}
+          <tr>
+            <td>{{ p.name }}</td>
+            <td>{{ p.spec or '—' }}</td>
+            <td>{{ p.qty }}</td>
+            <td>{{ "{:,}".format(p.unit_price) }}원</td>
+            <td>{{ "{:,}".format(p.subtotal) }}원</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="5" class="text-muted">등록된 항목 없음</td></tr>
+        {% endif %}
+      </tbody>
+      <tfoot>
+        <tr><td colspan="5" class="parts-total">{{ ui_labels.parts_total }} {{ "{:,}".format(report.parts_total) }}원</td></tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="report-section">
+    <div class="report-section-header">청구 비용</div>
+    <div class="report-billing">
+      <span class="charge-badge charge-{{ report.charge_type }}">{{ report.charge_label }}</span>
+      <span class="report-billing-note">{{ report.billing_note }}</span>
+    </div>
+  </div>
+
+  <div class="report-section">
+    <div class="report-section-header">지원 요청 이력</div>
+    <div class="support-feedback-badges report-support-badges">
+      {% set fb = report.support_feedback or {} %}
+      {% set labels = report.support_status_labels or {'waiting':'대기중','confirmed':'확인함','replied':'회신완료','rejected':'반려됨'} %}
+      {% if report.support_quality or (fb.quality and fb.quality.status) %}
+      {% set q = fb.quality or {} %}
+      {% set qs = q.status or 'waiting' %}
+      <div class="support-feedback-item">
+        <strong>품질팀</strong>
+        <span class="support-badge status-{{ qs }}">{{ labels.get(qs, qs) }}</span>
+        {% if q.reopen_note %}<div class="support-feedback-note">{{ q.reopen_note }}</div>{% endif %}
+        {% if q.reply and qs in ('replied', 'rejected') %}<div class="support-feedback-note">회신: {{ q.reply }}</div>{% endif %}
+      </div>
+      {% endif %}
+      {% if report.support_tech or (fb.tech and fb.tech.status) %}
+      {% set t = fb.tech or {} %}
+      {% set ts = t.status or 'waiting' %}
+      <div class="support-feedback-item">
+        <strong>{{ report.ui_labels.support_tech if report.ui_labels is defined else '기술부' }}</strong>
+        <span class="support-badge status-{{ ts }}">{{ labels.get(ts, ts) }}</span>
+        {% if t.urgent %}<span class="support-badge is-urgent">🚨 긴급직행</span>{% endif %}
+        {% if t.reopen_note %}<div class="support-feedback-note">{{ t.reopen_note }}</div>{% endif %}
+        {% if t.reply and ts in ('replied', 'rejected') %}<div class="support-feedback-note">회신: {{ t.reply }}</div>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+    <div class="report-text-box">{{ report.support_history }}</div>
+  </div>
+
+  <div class="report-section report-tech-section">
+    <div class="report-section-header">최고기술경영실 개입 현황</div>
+    <div class="report-info-grid">
+      <div class="report-info-cell">
+        <span class="report-info-label">에스컬레이션</span>
+        <span class="escalation-badge esc-{{ report.escalation_level }}">{{ report.escalation_label }}</span>
+      </div>
+      <div class="report-info-cell">
+        <span class="report-info-label">개입·조치</span>
+        <span>{{ report.intervention_label }}</span>
+      </div>
+      <div class="report-info-cell">
+        <span class="report-info-label">보상 협의</span>
+        <span>{{ report.compensation_label }}</span>
+      </div>
+      <div class="report-info-cell">
+        <span class="report-info-label">보상 금액</span>
+        <span>{{ report.compensation_amount or '—' }}</span>
+      </div>
+    </div>
+    {% if report.intervention_note %}
+    <div class="report-text-box" style="margin-top:10px"><strong>개입 메모</strong><br>{{ report.intervention_note }}</div>
+    {% endif %}
+    {% if report.compensation_note %}
+    <div class="report-text-box" style="margin-top:8px"><strong>보상 메모</strong><br>{{ report.compensation_note }}</div>
+    {% endif %}
+    {% if report.intervention_log %}
+    <div class="report-intervention-log">
+      <strong>개입·조치 이력</strong>
+      <ul>
+        {% for entry in report.intervention_log %}
+        <li>{{ entry.date or '—' }} · {{ entry.by or '—' }} — {{ entry.note or '' }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    <p class="form-hint report-tech-hint">※ 편집은 최고기술경영실 계정만 가능합니다. 담당 영업·AS는 조회만 가능합니다.</p>
+    {% if current_user_is_tech_mgmt %}
+    <div style="margin-top:12px">
+      <a class="btn btn-primary" href="{{ url_for('tech_monitor', focus=report.receipt_no, tab='list') }}">개입 관리</a>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="report-section">
+    <div class="report-section-header">현장 사진 / 고객 전달 사진</div>
+    <div class="report-photos">
+      {% if report.photos %}
+        {% for src in report.photos %}
+          <button type="button" class="report-photo photo-zoom-trigger" data-src="{{ src }}" aria-label="첨부 사진 크게 보기">
+            <img src="{{ src }}" alt="첨부 사진">
+            <span class="photo-zoom-label">크게 보기</span>
+          </button>
+        {% endfor %}
+      {% else %}
+        <div class="report-photo-empty"><span>첨부 사진 없음</span></div>
+      {% endif %}
+    </div>
+  </div>
+</div>

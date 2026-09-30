@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}AS 처리 시스템{% endblock %}
+
+{% block content %}
+<section class="product-select">
+  <div class="product-select-brand">
+    <div class="product-select-logo" aria-hidden="true">H</div>
+    <p class="product-select-brand-name">HYUNDAI WELDING</p>
+  </div>
+
+  <h1 class="product-select-title">AS 처리 시스템 — 제품군을 선택하세요</h1>
+  <p class="product-select-sub">선택한 제품군에 따라 접수·처리 조직과 화면 구성이 달라집니다.</p>
+
+  <div class="product-select-cards">
+    <a class="product-select-card" href="{{ url_for('home') }}">
+      <strong class="product-select-card-title">웰딩 장비</strong>
+      <span class="product-select-card-desc">
+        영업사무소 → 내수영업팀 · 관계사영업팀 · 수출영업팀
+        <small>(현대PNS 연계 구조)</small>
+      </span>
+    </a>
+
+    <a class="product-select-card" href="{{ url_for('rods_home') }}">
+      <strong class="product-select-card-title">용접봉</strong>
+      <span class="product-select-card-desc">
+        영업사무소 → 최고기술경영실 AS담당관 → A~D담당자
+        <small>(현대PNS와 별개 조직)</small>
+      </span>
+    </a>
+  </div>
+</section>
+{% endblock %}

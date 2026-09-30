@@ -1,0 +1,427 @@
+{% extends "base.html" %}
+
+{% block title %}장비별 AS통계{% endblock %}
+
+{% block content %}
+<section class="equip-stats">
+  <header class="equip-stats-hero">
+    <div>
+      <h1 class="equip-stats-title">장비별 AS통계</h1>
+      <p class="equip-stats-sub">
+        장비 모델별 AS 건수·재수리율·워런티 내 비율·최다 교체부품을 집계해
+        생산·기술부 설계/품질 개선 요청의로 활용합니다.
+        재수리율 15% 이상은 빨간색으로 강조됩니다.
+      </p>
+    </div>
+    <div class="equip-stats-toolbar">
+      <a class="btn btn-outline" href="{{ url_for('equip_stats_export_csv') }}">CSV 다운로드</a>
+    </div>
+  </header>
+
+  {# —— 상세보기 (클릭 시에만 스크롤) —— #}
+  {% if detail %}
+  <section class="equip-stats-detail" id="equipDetailCard" data-equip-detail>
+    <div class="equip-detail-head">
+      <h2 class="equip-stats-section-title">{{ detail.summary.name }} 상세보기</h2>
+      <a class="btn btn-outline" href="{{ url_for('equip_stats', q=rank_q, fix_page=fixes.page, fix_q=fixes.q) }}">상세 닫기</a>
+    </div>
+    <div class="equip-stats-kpi">
+      <article class="equip-kpi-card"><span>총 AS건수</span><strong>{{ detail.summary.total }}건</strong></article>
+      <article class="equip-kpi-card"><span>유상 비율</span><strong>{{ detail.summary.paid_rate }}%</strong></article>
+      <article class="equip-kpi-card {% if detail.summary.highlight %}is-alert{% endif %}">
+        <span>재수리율</span><strong>{{ detail.summary.re_repair_rate }}%</strong>
+      </article>
+      <article class="equip-kpi-card"><span>워런티 내 비율</span><strong>{{ detail.summary.warranty_rate }}%</strong></article>
+    </div>
+
+    {% if detail.version_compare and detail.version_compare|length >= 1 %}
+    <div class="equip-panel" style="margin-top:16px">
+      <h3>버전별 비교 (같은 계열)</h3>
+      <p class="equip-stats-hint">랭킹은 모델 단위로 유지되며, 상세에서만 계열 비교 참고용으로 표시합니다.</p>
+      <div class="table-wrap">
+        <table class="equip-table equip-rank-table mobile-list-table">
+          <thead>
+            <tr>
+              <th>버전</th><th>장비명</th><th>AS건수</th><th>유상비율</th><th>재수리율</th><th>워런티비율</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for v in detail.version_compare %}
+            <tr class="{% if v.is_current %}is-current-version{% endif %} {% if v.highlight %}is-re-repair-high{% endif %}">
+              <td class="mobile-card-title" data-label="버전">{{ v.label }}</td>
+              <td data-label="장비명">{{ v.name }}</td>
+              <td data-label="AS건수">{{ v.total }}</td>
+              <td data-label="유상비율">{{ v.paid_rate }}%</td>
+              <td data-label="재수리율" class="{% if v.highlight %}text-alert{% endif %}">{{ v.re_repair_rate }}%</td>
+              <td data-label="워런티비율">{{ v.warranty_rate }}%</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="equip-detail-grid">
+      <div class="equip-panel">
+        <h3>접수 표기별 건수</h3>
+        <div class="table-wrap">
+          <table class="equip-table equip-versions-table mobile-list-table">
+            <thead><tr><th>표기</th><th>건수</th></tr></thead>
+            <tbody>
+              {% for v in detail.versions %}
+              <tr>
+                <td class="mobile-card-title" data-label="표기">{{ v.name }}</td>
+                <td data-label="건수">{{ v.count }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="2">데이터 없음</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="equip-panel">
+        <h3>최근 12개월 월별 접수</h3>
+        <div class="equip-month-bars">
+          {% for m in detail.months %}
+          <div class="equip-month-row">
+            <span class="equip-month-label">{{ m.label }}</span>
+            <div class="equip-bar-track"><div class="equip-bar" style="width:{{ m.pct }}%"></div></div>
+            <span class="equip-month-count">{{ m.count }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div class="equip-panel" style="margin-top:16px">
+      <h3>최다 교체부품 Top 10</h3>
+      {% if detail.pcb_parts_total %}
+      <p class="equip-stats-hint">PCB류 대략 집계(참고): {{ detail.pcb_parts_total }}건</p>
+      {% endif %}
+      <div class="table-wrap">
+        <table class="equip-table equip-parts-table mobile-list-table">
+          <thead><tr><th>부품명</th><th>수량</th><th>비고</th></tr></thead>
+          <tbody>
+            {% for p in detail.top_parts %}
+            <tr>
+              <td class="mobile-card-title" data-label="부품">{{ p.name }}</td>
+              <td data-label="수량">{{ p.count }}</td>
+              <td data-label="비고">{{ p.hint or '-' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3">등록된 부품 없음</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="equip-panel" style="margin-top:16px">
+      <h3>최근 사례 15건</h3>
+      <div class="table-wrap">
+        <table class="equip-table equip-cases-table mobile-list-table">
+          <thead>
+            <tr>
+              <th>접수번호</th><th>일자</th><th>고객</th><th>팀</th><th>상태</th><th>담당</th><th>보고서</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in detail.cases %}
+            <tr>
+              <td class="mobile-card-title" data-label="접수번호">{{ c.receipt_no }}</td>
+              <td data-label="일자">{{ c.receipt_date }}</td>
+              <td data-label="고객">{{ c.customer_name }}</td>
+              <td data-label="팀">{{ c.team }}</td>
+              <td data-label="상태">{{ c.status_label }}</td>
+              <td data-label="담당">{{ c.as_staff_name or '-' }}</td>
+              <td data-label="보고서">
+                <a class="btn btn-primary btn-sm equip-detail-btn"
+                   href="{{ url_for('report', receipt_no=c.receipt_no) }}">AS보고서</a>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7">사례 없음</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  {# —— 랭킹 —— #}
+  <section class="equip-stats-block equip-rank-block">
+    <div class="equip-rank-head">
+      <h2 class="equip-stats-section-title">장비 AS 순위</h2>
+      <form class="equip-rank-search" method="get" action="{{ url_for('equip_stats') }}">
+        {% if detail %}<input type="hidden" name="detail" value="{{ detail.summary.name }}">{% endif %}
+        <label class="sr-only" for="rank_q">장비명 검색</label>
+        <input type="search" id="rank_q" name="q" class="form-input" value="{{ rank_q or '' }}"
+               placeholder="장비명 검색" autocomplete="off">
+        <button type="submit" class="btn btn-outline">검색</button>
+        {% if rank_q %}
+        <a class="btn btn-outline" href="{% if detail %}{{ url_for('equip_stats', detail=detail.summary.name) }}{% else %}{{ url_for('equip_stats') }}{% endif %}">초기화</a>
+        {% endif %}
+      </form>
+    </div>
+    <div class="table-wrap equip-rank-wrap">
+      <table class="equip-table equip-rank-table mobile-list-table">
+        <colgroup>
+          <col class="col-rank">
+          <col class="col-name">
+          <col class="col-total">
+          <col class="col-charge">
+          <col class="col-re">
+          <col class="col-war">
+          <col class="col-part">
+          <col class="col-detail">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>순위</th>
+            <th>장비명(표준화)</th>
+            <th>총 AS건수</th>
+            <th>유상/무상</th>
+            <th>재수리율</th>
+            <th>워런티내 비율</th>
+            <th>최다 교체부품</th>
+            <th>상세보기</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in ranking %}
+          <tr class="{% if g.highlight %}is-re-repair-high{% endif %}">
+            <td data-label="순위"><span class="equip-rank-num">{{ loop.index }}</span></td>
+            <td class="mobile-card-title equip-rank-name" data-label="장비명">{{ g.name }}</td>
+            <td data-label="총 AS건수"><strong class="equip-rank-total">{{ g.total }}</strong></td>
+            <td data-label="유상/무상">
+              <span class="equip-charge-pair"><em>{{ g.paid }}</em><span>/</span><em class="is-free">{{ g.free }}</em></span>
+            </td>
+            <td data-label="재수리율" class="{% if g.highlight %}text-alert{% endif %}">{{ g.re_repair_rate }}%</td>
+            <td data-label="워런티내 비율">{{ g.warranty_rate }}%</td>
+            <td data-label="최다 교체부품" class="equip-rank-part">
+              {% if g.top_part and g.top_part != '-' %}
+              <span class="equip-part-chip">{{ g.top_part }}{% if g.top_part_count %} <b>{{ g.top_part_count }}</b>{% endif %}</span>
+              {% else %}-{% endif %}
+            </td>
+            <td data-label="상세보기">
+              <a class="btn btn-primary btn-sm equip-detail-btn js-equip-detail"
+                 href="{{ url_for('equip_stats', detail=g.name, scroll=1, q=rank_q) }}">상세보기</a>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8">집계할 장비가 없습니다.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {# —— 장비명 표기 통합 관리 —— #}
+  <section class="equip-stats-block equip-fix-manage" id="equip-fixes">
+    <header class="equip-fix-hero">
+      <h2 class="equip-fix-hero-title">장비명 표기 통합 관리</h2>
+      <p class="equip-fix-hero-note">등록·삭제는 관리자만 가능합니다(조회는 팀장급 이상 전체)</p>
+    </header>
+
+    <div class="equip-fix-body">
+      <p class="equip-fix-intro">대소문자·공백만 다른 경우는 자동으로 합쳐지므로, 실제 오타·다른 표기만 등록하세요. (예: LiBERO 6000M → LIBERO 600M). 등록 즉시 랭킹·상세에 반영됩니다.</p>
+
+      {% if can_manage_fixes %}
+      {# 1) 유사 표기 후보 #}
+      <div class="equip-fix-section equip-cand-section">
+        <div class="equip-fix-section-bar">
+          <h3 class="equip-fix-section-title"><span class="equip-cand-warn" aria-hidden="true">⚠</span> 유사 표기 후보 (자동 감지 — 등록 전까지는 계속 다시 나타납니다)</h3>
+        </div>
+        <p class="equip-fix-summary equip-cand-lead">
+          {% if candidates %}
+          {{ candidates|length }}건의 유사 표기 후보가 감지되었습니다. 실제로 같은 장비가 맞는지 확인 후 등록하세요.
+          {% else %}
+          현재 자동 감지된 유사 표기 후보가 없습니다.
+          {% endif %}
+        </p>
+        {% if candidates %}
+        <ul class="equip-candidate-list">
+          {% for c in candidates %}
+          <li class="equip-candidate-row">
+            <div class="equip-candidate-pair">
+              <span class="equip-cand-chip">{{ c.a }}</span>
+              <span class="equip-cand-count">({{ c.a_count }}건)</span>
+              <span class="equip-cand-swap" aria-hidden="true">↔</span>
+              <span class="equip-cand-chip">{{ c.b }}</span>
+              <span class="equip-cand-count">({{ c.b_count }}건)</span>
+            </div>
+            <div class="equip-candidate-actions">
+              <button type="button" class="btn btn-outline btn-sm js-equip-merge"
+                      data-raw="{{ c.a }}" data-std="{{ c.b }}">같은 장비로 통합</button>
+              <button type="button" class="btn btn-outline btn-sm js-equip-merge"
+                      data-raw="{{ c.b }}" data-std="{{ c.a }}">반대로 통합</button>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+      {% else %}
+      <p class="equip-fix-team-note">통합을 원하는 모델명이 있으면 관리자에게 문의 및 요청하십시오.</p>
+      {% endif %}
+
+      {# 2) 등록된 표기 수정 목록 #}
+      <div class="equip-fix-section">
+        <div class="equip-fix-section-bar">
+          <h3 class="equip-fix-section-title">등록된 표기 수정 목록</h3>
+          <form class="equip-fix-search" method="get" action="{{ url_for('equip_stats') }}#equip-fixes">
+            {% if detail %}<input type="hidden" name="detail" value="{{ detail.summary.name }}">{% endif %}
+            {% if rank_q %}<input type="hidden" name="q" value="{{ rank_q }}">{% endif %}
+            <label class="sr-only" for="fix_q">원본·표준 표기 검색</label>
+            <input type="search" id="fix_q" name="fix_q" class="form-input" value="{{ fixes.q }}"
+                   placeholder="원본·표준 표기 검색" autocomplete="off">
+          </form>
+        </div>
+        <p class="equip-fix-summary">{{ fixes.summary }}</p>
+        <div class="table-wrap">
+          <table class="equip-table equip-fix-table">
+            <thead>
+              <tr>
+                <th>원본 표기</th>
+                <th>표준 표기</th>
+                {% if can_manage_fixes %}<th class="equip-fix-col-action"></th>{% endif %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for f in fixes.rows %}
+              <tr>
+                <td data-label="원본">{{ f.raw_name }}</td>
+                <td data-label="표준">{{ f.standard_name }}</td>
+                {% if can_manage_fixes %}
+                <td class="equip-fix-col-action" data-label="">
+                  <button type="button" class="btn btn-outline btn-sm js-equip-fix-del" data-id="{{ f.id }}">삭제</button>
+                </td>
+                {% endif %}
+              </tr>
+              {% else %}
+              <tr>
+                <td colspan="{% if can_manage_fixes %}3{% else %}2{% endif %}">등록된 수정이 없습니다.</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if fixes.show_pager %}
+        <nav class="equip-fix-pager" aria-label="수정 목록 페이지">
+          {% if fixes.page > 1 %}
+          <a class="btn btn-outline" href="{{ url_for('equip_stats', fix_page=fixes.page-1, fix_q=fixes.q, q=rank_q, detail=detail.summary.name) if detail else url_for('equip_stats', fix_page=fixes.page-1, fix_q=fixes.q, q=rank_q) }}#equip-fixes">‹</a>
+          {% endif %}
+          {% for p in fixes.page_numbers %}
+          <a class="btn {% if p == fixes.page %}btn-primary{% else %}btn-outline{% endif %}"
+             href="{{ url_for('equip_stats', fix_page=p, fix_q=fixes.q, q=rank_q, detail=detail.summary.name) if detail else url_for('equip_stats', fix_page=p, fix_q=fixes.q, q=rank_q) }}#equip-fixes">{{ p }}</a>
+          {% endfor %}
+          {% if fixes.page < fixes.pages %}
+          <a class="btn btn-outline" href="{{ url_for('equip_stats', fix_page=fixes.page+1, fix_q=fixes.q, q=rank_q, detail=detail.summary.name) if detail else url_for('equip_stats', fix_page=fixes.page+1, fix_q=fixes.q, q=rank_q) }}#equip-fixes">›</a>
+          {% endif %}
+        </nav>
+        {% endif %}
+      </div>
+
+      {# 3) 직접 추가 #}
+      {% if can_manage_fixes %}
+      <div class="equip-fix-section">
+        <div class="equip-fix-section-bar">
+          <h3 class="equip-fix-section-title">직접 추가</h3>
+        </div>
+        <form class="equip-fix-add" id="equipFixAddForm">
+          <div class="equip-fix-field">
+            <label for="fix_raw_name">원본 표기 (오타·다른 표기)</label>
+            <input type="text" id="fix_raw_name" name="raw_name" class="form-input"
+                   placeholder="예: LiBERO 6000M" required autocomplete="off">
+          </div>
+          <div class="equip-fix-field">
+            <label for="fix_std_name">표준 표기 (통합할 이름)</label>
+            <input type="text" id="fix_std_name" name="standard_name" class="form-input"
+                   placeholder="예: LIBERO 600M" required autocomplete="off">
+          </div>
+          <div class="equip-fix-add-action">
+            <button type="submit" class="btn btn-primary equip-fix-add-btn">추가</button>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const SCROLL_DETAIL = {{ 'true' if scroll_detail else 'false' }};
+  const CURRENT_DETAIL = {{ (detail.summary.name if detail else '')|tojson }};
+
+  function reloadQuiet(extra) {
+    const u = new URL(location.href);
+    u.searchParams.delete('scroll');
+    if (CURRENT_DETAIL) u.searchParams.set('detail', CURRENT_DETAIL);
+    else u.searchParams.delete('detail');
+    u.searchParams.set('fix_page', '1');
+    if (extra && extra.fix_q != null) u.searchParams.set('fix_q', extra.fix_q);
+    // 등록/삭제/통합 후: 스크롤 없이 내용만 최신화
+    location.href = u.pathname + '?' + u.searchParams.toString() + '#equip-fixes';
+  }
+
+  if (SCROLL_DETAIL) {
+    const card = document.getElementById('equipDetailCard');
+    if (card) {
+      requestAnimationFrame(() => {
+        card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  }
+
+  async function postFix(fd) {
+    if (CURRENT_DETAIL) fd.append('detail', CURRENT_DETAIL);
+    const res = await fetch('{{ url_for("equip_stats_fix") }}', {
+      method: 'POST', body: fd, credentials: 'same-origin'
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error || '처리 실패');
+      return false;
+    }
+    return true;
+  }
+
+  document.getElementById('equipFixAddForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    fd.append('action', 'add');
+    if (await postFix(fd)) reloadQuiet();
+  });
+
+  document.querySelectorAll('.js-equip-fix-del').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('이 장비명 수정을 삭제할까요?')) return;
+      const fd = new FormData();
+      fd.append('action', 'delete');
+      fd.append('id', btn.dataset.id || '');
+      if (await postFix(fd)) reloadQuiet();
+    });
+  });
+
+  document.querySelectorAll('.js-equip-merge').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const raw = btn.dataset.raw || '';
+      const std = btn.dataset.std || '';
+      if (!raw || !std) return;
+      if (!confirm(`"${raw}" → "${std}" 로 통합할까요?`)) return;
+      const fd = new FormData();
+      fd.append('action', 'add');
+      fd.append('raw_name', raw);
+      fd.append('standard_name', std);
+      if (await postFix(fd)) reloadQuiet();
+    });
+  });
+})();
+</script>
+{% endblock %}

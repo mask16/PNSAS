@@ -1,0 +1,1821 @@
+{% extends "base.html" %}
+
+{% block title %}영업접수{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <span class="page-breadcrumb">영업 담당자 화면</span>
+  <h1 class="page-title page-title-dark">{{ '영업 접수 수정' if edit_receipt else '영업 접수 등록' }}</h1>
+  <p class="page-desc">
+    {% if edit_receipt %}
+      잘못 입력한 접수 내용을 수정합니다. 접수번호는 변경되지 않습니다.
+    {% else %}
+      고객으로부터 AS 요청을 받으면 아래 항목을 입력해 접수합니다. 접수번호는 <strong>{{ ui_labels.receipt_desc }}</strong> 형식으로 자동 생성됩니다.
+    {% endif %}
+  </p>
+</div>
+
+<form class="form-card" id="salesForm"
+      action="{{ url_for('sales_update', receipt_no=edit_receipt.receipt_no) if edit_receipt else url_for('sales_register') }}"
+      method="post" enctype="multipart/form-data">
+  <div class="form-card-header">{{ '접수 정보 수정' if edit_receipt else '신규 접수 입력' }}</div>
+  <div class="form-card-body">
+
+    <div class="form-grid form-grid-3">
+      <div class="form-group">
+        <label class="form-label">접수날짜 <span class="required">*</span></label>
+        <input type="date" name="receipt_date" id="receiptDate" class="form-input"
+               value="{{ edit_receipt.receipt_date if edit_receipt else today }}" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">AS 대응팀 <span class="required">*</span></label>
+        {% if team_select_enabled %}
+        <select name="team" class="form-select" required>
+          {% for team in teams %}
+            <option value="{{ team.id }}"
+                    {% if (edit_receipt and team.id == edit_receipt.team_id) or (not edit_receipt and loop.first) %}selected{% endif %}>
+              {{ team.label }}
+            </option>
+          {% endfor %}
+        </select>
+        {% if can_choose_as_response_team %}
+        <span class="form-hint">수출이면 김윤식이 AS를 담당합니다. 내수이면 내수영업팀에 공유되고 팀장이 담당자를 지정합니다.</span>
+        {% endif %}
+        {% else %}
+        <input type="hidden" name="team" value="{{ edit_receipt.team_id if edit_receipt else (teams[0].id if teams else '') }}">
+        <input type="text" class="form-input form-input-readonly"
+               value="{{ edit_receipt.team if edit_receipt else (teams[0].label if teams else '') }}"
+               readonly tabindex="-1" aria-readonly="true">
+        {% endif %}
+      </div>
+      <div class="form-group">
+        <label class="form-label">접수 담당자 <span class="required">*</span></label>
+        {% if is_office_account %}
+        <input type="text" name="receipt_staff_name" class="form-input" required
+               value="{{ edit_receipt.get('receipt_staff_name', '') if edit_receipt else '' }}"
+               placeholder="응대한 직원 이름">
+        <span class="form-hint">공용계정이므로 실제 응대한 담당자 이름을 입력하세요. 접수사무소({{ current_user }})는 자동 기록됩니다.</span>
+        {% elif can_choose_receipt_staff %}
+        <select name="receipt_staff" class="form-select" required>
+          <option value="">담당자를 선택하세요</option>
+          {% for dept in receipt_staff_choice_tree %}
+            <optgroup label="{{ dept.label }}">
+              {% for staff in dept.people %}
+                <option value="{{ staff.id }}"
+                        {% if edit_receipt and staff.id == edit_receipt.get('receipt_staff', '') %}selected{% endif %}>
+                  {{ staff.display_name }}
+                </option>
+              {% endfor %}
+            </optgroup>
+          {% endfor %}
+        </select>
+        <span class="form-hint">
+          {% if is_rods %}
+          AS 대응팀과 무관하게 AS담당관 인원을 지정합니다. 완료 알림은 지정한 담당자에게 발송됩니다.
+          {% else %}
+          AS 대응팀과 무관하게 내수·관계사·수출 담당자를 지정합니다. 완료 알림은 지정한 담당자에게 발송됩니다.
+          {% endif %}
+        </span>
+        {% else %}
+        <input type="hidden" name="receipt_staff" value="{{ locked_receipt_staff.id }}">
+        <input type="text" class="form-input form-input-readonly"
+               value="{{ locked_receipt_staff.name }}"
+               readonly tabindex="-1" aria-readonly="true">
+        <span class="form-hint">로그인한 본인으로 접수됩니다. 완료 알림도 본인에게 발송됩니다.</span>
+        {% endif %}
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">접수번호</label>
+        <input type="text" id="receiptNoPreview" class="form-input form-input-readonly"
+               value="{{ edit_receipt.receipt_no if edit_receipt else next_receipt_no }}"
+               placeholder="등록 시 자동생성" readonly>
+        <span class="form-hint">{{ ui_labels.receipt_hint }}</span>
+      </div>
+      <div class="form-group">
+        <label class="form-label">고객명 <span class="required">*</span></label>
+        <input type="text" name="customer_name" class="form-input"
+               value="{{ edit_receipt.customer_name if edit_receipt else '' }}" placeholder="예: 알앤티" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">고객 담당자</label>
+        <input type="text" name="customer_contact" class="form-input"
+               value="{{ edit_receipt.get('customer_contact', '') if edit_receipt else '' }}" placeholder="예: 김담당">
+      </div>
+      {% if can_pick_assigned_office %}
+      <div class="form-group">
+        <label class="form-label">담당 사무소 (선택)</label>
+        <select name="office" class="form-select">
+          <option value="">해당 없음</option>
+          {% for office in office_choices %}
+            <option value="{{ office.name }}"
+                    {% if edit_receipt and (edit_receipt.get('office') or '') == office.name %}selected{% endif %}>
+              {{ office.name }}
+            </option>
+          {% endfor %}
+        </select>
+        <span class="form-hint">계정관리의 지역 영업사무소에 등록된 사무소입니다. 고객이 정직원에게 직접 연락했거나, 과거 이력을 입력할 때 선택합니다.</span>
+      </div>
+      {% endif %}
+
+      <div class="form-group">
+        <label class="form-label">연락처</label>
+        <input type="tel" name="phone" id="phoneInput" class="form-input"
+               inputmode="numeric" autocomplete="tel" maxlength="13"
+               value="{{ edit_receipt.get('phone', '') if edit_receipt else '' }}" placeholder="010-0000-0000">
+      </div>
+      <div class="form-group">
+        <label class="form-label">{{ ui_labels.product_field }} <span class="required">*</span></label>
+        <input type="text" name="equipment_name" class="form-input"
+               value="{{ edit_receipt.equipment_name if edit_receipt else '' }}" placeholder="{{ ui_labels.product_placeholder }}" required>
+      </div>
+      {% if not is_rods %}
+      <div class="form-group">
+        <label class="form-label">{{ ui_labels.serial_field }}</label>
+        <input type="text" name="serial_no" class="form-input"
+               value="{{ edit_detail.get('serial_no', '') if edit_detail else '' }}"
+               placeholder="예: AJJA00002" autocomplete="off">
+      </div>
+      {% endif %}
+      {% if is_rods %}
+      <div class="form-group">
+        <label class="form-label">규격 <span class="required">*</span></label>
+        <input type="text" name="spec" class="form-input"
+               value="{{ edit_receipt.get('spec', '') if edit_receipt else '' }}" placeholder="예: 3.2×350" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">로트번호</label>
+        <input type="text" name="lot" class="form-input"
+               value="{{ edit_receipt.get('lot', '') if edit_receipt else '' }}" placeholder="선택 입력">
+      </div>
+      {% endif %}
+      <div class="form-group">
+        <label class="form-label">최초 출하일</label>
+        <input type="date" name="ship_date" class="form-input"
+               value="{{ edit_receipt.get('ship_date', '') if edit_receipt else '' }}">
+      </div>
+    </div>
+    <div class="form-row-split">
+      {% if is_office_account %}
+      <input type="hidden" name="as_staff" value="">
+      {% else %}
+      <div class="form-group form-group-grow sales-as-staff-field">
+        <label class="form-label">AS 담당자 지정 (선택)</label>
+        {% if can_choose_as_response_team and not edit_receipt %}
+        <div id="exportAsLockedWrap">
+          <input type="hidden" name="as_staff" id="asStaffHidden" value="{{ export_as_self_code }}">
+          <input type="text" class="form-input form-input-readonly" id="asStaffLockedLabel"
+                 value="{{ export_as_self_name }}" readonly tabindex="-1" aria-readonly="true">
+          <span class="form-hint" id="exportResponseAsHint">수출영업팀 선택 시 김윤식에게 배정됩니다.</span>
+        </div>
+        <select id="asStaffSelect" class="form-select" hidden disabled>
+          <option value="">미지정 (AS 대응팀 대기 목록에서 자율 처리)</option>
+          <option value="{{ export_as_default }}">{{ export_as_handler_name }}</option>
+        </select>
+        <span class="form-hint" id="exportDomesticAsHint" hidden>
+          내수영업팀 선택 시 미지정·장호빈만 지정할 수 있습니다.
+        </span>
+        {% elif can_reassign_form %}
+        <select name="as_staff" id="asStaffSelect" class="form-select">
+          <option value="">미지정 (AS 대응팀 대기 목록에서 자율 처리)</option>
+          {% for dept in org_tree %}
+            {% set dept_as = dept.people|selectattr('can_as')|list %}
+            {% if dept_as %}
+            <optgroup label="{{ dept.label }}" data-team-group="1">
+              {% for staff in dept_as %}
+                <option value="{{ staff.id }}"
+                        data-team-code="{{ staff.team_code }}"
+                        {% if edit_receipt and staff.id == edit_receipt.get('as_staff', '') %}selected{% endif %}>
+                  {{ staff.display_name }}
+                </option>
+              {% endfor %}
+            </optgroup>
+            {% endif %}
+          {% endfor %}
+        </select>
+        <span class="form-hint" id="asStaffExportHint" hidden>
+          수출영업팀은 장호빈·김윤식만 AS 담당자로 지정할 수 있습니다.
+        </span>
+        {% else %}
+        <input type="hidden" name="as_staff" value="{{ edit_receipt.get('as_staff', '') if edit_receipt else '' }}">
+        <div class="form-input form-input-readonly" aria-readonly="true">
+          {% if edit_receipt %}
+            {{ edit_receipt.get('as_staff_name') or edit_receipt.get('as_display') or '미지정' }}
+          {% else %}
+            미지정 (AS 대응팀 대기 목록에서 자율 처리)
+          {% endif %}
+        </div>
+        <span class="form-hint">AS 담당자 지정·변경은 해당 담당 팀 소속(접수전담·접수+AS·AS전담)이면 팀장 여부와 무관하게 가능합니다. 부서장·총괄·대표이사·관리자는 전 팀 가능합니다.</span>
+        {% endif %}
+      </div>
+      {% endif %}
+      <div class="form-group">
+        <label class="form-label">유상 / 무상 <span class="required">*</span></label>
+        <div class="toggle-group" id="chargeTypeToggle">
+          <button type="button" class="toggle-btn {% if edit_receipt and edit_receipt.charge_type == 'paid' %}active{% endif %}" data-value="paid">유상</button>
+          <button type="button" class="toggle-btn {% if not edit_receipt or edit_receipt.charge_type == 'free' %}active{% endif %}" data-value="free">무상</button>
+        </div>
+        <input type="hidden" name="charge_type" id="chargeTypeInput"
+               value="{{ edit_receipt.charge_type if edit_receipt else 'free' }}">
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">증상 <span class="required">*</span></label>
+      <textarea name="symptoms" class="form-textarea" rows="4"
+                placeholder="고객이 전달한 증상을 구체적으로 입력하세요" required>{{ edit_receipt.symptoms if edit_receipt else '' }}</textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">
+        고객 전달 사진
+        <span class="form-label-sub">(여러 장 동시 첨부 가능 · 태그는 「고객 전달」로 저장)</span>
+      </label>
+      <div class="photo-upload-area" id="photoUploadArea">
+        <input type="file" name="photos" id="photoInput" accept="image/*" multiple hidden>
+        <label for="photoInput" class="photo-add-btn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/>
+          </svg>
+          <span>사진 추가</span>
+        </label>
+        <span class="photo-upload-status" id="photoUploadStatus" aria-live="polite"></span>
+        <div class="photo-preview-list" id="photoPreviewList"></div>
+        <div id="removedPhotoInputs"></div>
+      </div>
+    </div>
+
+    {% if can_request_quality_support %}
+    <div class="form-group" id="salesSupportGroup">
+      <label class="form-label">
+        추가 지원 요청
+        <span class="form-label-sub">(해당 시에만 선택 · 체크 후 「공유하기」로 즉시 알림)</span>
+      </label>
+      <div class="checkbox-group">
+        <div class="support-action-row">
+          <label class="checkbox-item">
+            <input type="checkbox" name="support_quality" id="salesSupportQuality" value="1"
+                   {% if edit_receipt and edit_receipt.get('support_quality') %}checked{% endif %}>
+            <span>품질팀 지원 요청 (기술지원, 품질판정)</span>
+          </label>
+          <button type="button" class="btn btn-outline btn-share-now" id="salesShareQualityBtn" hidden>공유하기</button>
+          <span class="support-shared-mark" id="salesShareQualityMark"
+                {% if not (edit_receipt and edit_receipt.get('support_quality')) %}hidden{% endif %}>✓ 공유됨</span>
+        </div>
+      </div>
+      {% if edit_receipt and edit_receipt.get('support_tech') and not (is_sales_head or can_edit_all_ops) %}
+      <p class="form-hint support-stage-hint">품질팀이 {{ '기술연구소' if is_rods else '기술부' }}에 공유한 건입니다. 영업접수에서는 변경할 수 없습니다.</p>
+      {% endif %}
+      {% if is_sales_head or can_edit_all_ops %}
+      <div class="support-action-row" style="margin-top:8px">
+        <label class="checkbox-item">
+          <input type="checkbox" name="support_tech" id="salesSupportTech" value="1"
+                 {% if edit_receipt and edit_receipt.get('support_tech') %}checked{% endif %}>
+          <span>{{ '기술연구소에 공유' if is_rods else '기술부에 공유' }}</span>
+        </label>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="form-actions">
+      {% if edit_receipt %}
+        <a href="{{ url_for('sales', _anchor='receiptList') }}" class="btn btn-outline">수정 취소</a>
+        <button type="submit" class="btn btn-primary">수정 저장</button>
+      {% else %}
+        <button type="reset" class="btn btn-outline" id="resetBtn">초기화</button>
+        <button type="submit" class="btn btn-primary">접수 등록</button>
+      {% endif %}
+    </div>
+  </div>
+</form>
+
+<section class="receipt-list-section" id="receiptList">
+  {% if sales_scope_hint %}
+  <p class="page-desc sales-scope-hint">{{ sales_scope_hint }}</p>
+  {% endif %}
+  {% if queue_summary %}
+  {% include '_queue_summary_filter_bar.html' %}
+  {% endif %}
+  <div class="list-toolbar">
+    <div class="search-box">
+      <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>
+      </svg>
+      <input type="text" id="searchInput" class="search-input" placeholder="고객명, 접수번호, {{ ui_labels.product_field }} 검색">
+    </div>
+    <div class="status-filters" id="statusFilters">
+      <button type="button" class="filter-btn active" data-status="all">전체 <span class="filter-count">{{ status_counts.all }}</span></button>
+      <button type="button" class="filter-btn" data-status="received">접수 <span class="filter-count">{{ status_counts.received }}</span></button>
+      <button type="button" class="filter-btn" data-status="in_progress">진행중 <span class="filter-count">{{ status_counts.in_progress }}</span></button>
+      <button type="button" class="filter-btn" data-status="completed">완료 <span class="filter-count">{{ status_counts.completed }}</span></button>
+    </div>
+  </div>
+
+  <div class="table-wrap sales-receipt-table-wrap">
+    <table class="receipt-table sales-receipt-table mobile-list-table" id="receiptTable">
+      <thead>
+        <tr>
+          <th>No</th>
+          <th>접수번호</th>
+          <th class="sales-col-date sales-mobile-only">접수일</th>
+          <th class="sales-col-team">AS 대응팀</th>
+          <th class="sales-col-customer">고객명</th>
+          <th class="sales-col-equipment">{{ ui_labels.product_field }}</th>
+          <th>증상</th>
+          {% if not is_office_account %}
+          <th class="sales-col-assignee">지정 AS담당</th>
+          {% endif %}
+          <th>유·무상 / 비용 / 부품</th>
+          <th>상태</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in receipts %}
+        <tr data-status="{{ r.filter_status }}"
+            data-queue-team-wait="{{ '1' if r.queue_team_unassigned_wait else '0' }}"
+            data-queue-team-progress="{{ '1' if r.queue_team_in_progress else '0' }}"
+            data-search="{{ r.receipt_no }} {{ r.customer_name }} {{ r.equipment_name }} {{ r.symptoms }}">
+          <td data-label="No">{{ loop.index }}</td>
+          <td data-label="접수번호">{% if r.as_unassigned and r.can_claim_as and r.status != 'completed' %}<a href="{{ url_for('rods_history' if is_rods else 'history', tab=r.team_id, receipt_no=r.receipt_no) }}" class="receipt-link" data-claim-unassigned="1">{{ r.receipt_no }}</a>{% else %}<a href="{{ url_for('report', receipt_no=r.receipt_no) }}" class="receipt-link">{{ r.receipt_no }}</a>{% endif %}</td>
+          <td data-label="접수일" class="sales-col-date sales-mobile-only">{{ r.receipt_date }}</td>
+          <td data-label="AS 대응팀" class="sales-col-team">{{ r.team }}</td>
+          {% include '_sales_customer_cell.html' %}
+          <td data-label="{{ ui_labels.product_field }}" class="sales-col-equipment" title="{{ r.equipment_name }}">
+            <span class="sales-equipment-text">{{ r.equipment_name }}</span>
+            {% if is_rods and r.get('spec') %}<small class="table-sub">{{ r.spec }}{% if r.get('lot') %} / {{ r.lot }}{% endif %}</small>{% endif %}
+          </td>
+          <td data-label="증상" class="sales-col-symptoms"><span class="sales-symptoms-text">{{ r.symptoms }}</span></td>
+          {% if not is_office_account %}
+          {% include '_sales_assignee_cell.html' %}
+          {% endif %}
+          {% include '_sales_billing_cell.html' %}
+          {% include '_sales_status_cell.html' %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="table-empty" id="tableEmpty" hidden>검색 결과가 없습니다.</p>
+  </div>
+
+  <p class="table-note">
+    ※ 수리완료일과 상태는 AS담당이 이력관리에서 완료 처리하면 자동으로 반영됩니다. 완료로 바뀌면 고객사에 연락하시면 됩니다.
+  </p>
+</section>
+
+{# 6.6.1 부품관리 모달 #}
+<div class="parts-modal" id="partsModal" hidden>
+  <div class="parts-modal-backdrop" data-close-parts></div>
+  <div class="parts-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="partsModalTitle">
+    <div class="parts-modal-header">
+      <h3 id="partsModalTitle">{% if is_rods %}제품 교환 관리{% else %}교체 부품 관리{% endif %}</h3>
+      <button type="button" class="parts-modal-close" data-close-parts aria-label="닫기">&times;</button>
+    </div>
+    <p class="form-hint" id="partsModalMeta"></p>
+    <div class="parts-table-wrap">
+      <table class="parts-edit-table" id="salesPartsTable">
+        <thead>
+          <tr>
+            <th>{{ ui_labels.part_name }}</th>
+            <th>규격</th>
+            <th>{{ ui_labels.part_qty }}</th>
+            <th>단가(원)</th>
+            <th>소계</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="salesPartsBody"></tbody>
+      </table>
+    </div>
+    <div class="parts-footer">
+      <span class="parts-total-label">합계 <strong id="salesPartsTotal">0</strong>원</span>
+      <button type="button" class="btn btn-outline" id="salesAddPartBtn">+ 행 추가</button>
+    </div>
+    <p class="form-hint" id="partsBillingHint"></p>
+    <div class="parts-modal-actions">
+      <button type="button" class="btn btn-outline" data-close-parts>취소</button>
+      <button type="button" class="btn btn-primary" id="salesPartsSaveBtn">저장</button>
+    </div>
+  </div>
+</div>
+
+{# AS 담당자 지정·변경 — 드래그앤드롭 (목업 그림 12 기준) #}
+<div class="parts-modal assign-modal" id="assignAsModal" hidden>
+  <div class="parts-modal-backdrop" data-close-assign></div>
+  <div class="parts-modal-dialog assign-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="assignAsTitle">
+    <div class="parts-modal-header">
+      <h3 id="assignAsTitle">AS 담당자 지정 · 변경 <span class="assign-limit-inline" id="assignLimitBadge">(1명)</span></h3>
+      <button type="button" class="parts-modal-close" data-close-assign aria-label="닫기">&times;</button>
+    </div>
+    <p class="form-hint assign-modal-meta" id="assignAsMeta"></p>
+
+    <div class="assign-drop-zone" id="assignDropZone" data-drop-zone>
+      <span class="assign-drop-label" id="assignDropLabel">지정할 담당자 — 담당자 1명을 지정합니다. 2명 이상 공동 지정은 팀장 또는 부서장·총괄·대표이사만 가능합니다.</span>
+      <div class="assign-drop-slot" id="assignDropSlot">
+        <span class="assign-drop-placeholder">아래 담당자를 이곳으로 끌어다 놓으세요</span>
+      </div>
+    </div>
+
+    <p class="assign-permission-warn" id="assignPermissionWarn" hidden></p>
+
+    <p class="assign-hint" id="assignHint">담당자 카드를 탭·클릭으로 선택/해제할 수 있습니다. 다른 사람으로 바꾸려면 먼저 선택을 해제한 뒤 다시 선택하세요.</p>
+
+    <div class="assign-staff-grid" id="assignStaffGrid" role="listbox" aria-label="AS 담당자 목록" aria-multiselectable="false"></div>
+
+    <div class="parts-modal-actions">
+      <button type="button" class="btn btn-outline" data-close-assign>취소</button>
+      <button type="button" class="btn btn-primary" id="assignAsSaveBtn">지정 · 변경 적용</button>
+    </div>
+  </div>
+</div>
+
+{# 팀 이관 요청 #}
+<div class="parts-modal" id="transferModal" hidden>
+  <div class="parts-modal-backdrop" data-close-transfer></div>
+  <div class="parts-modal-dialog assign-modal-dialog transfer-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="transferTitle">
+    <div class="parts-modal-header">
+      <h3 id="transferTitle">타 팀으로 이관 요청</h3>
+      <button type="button" class="parts-modal-close" data-close-transfer aria-label="닫기">&times;</button>
+    </div>
+    <p class="form-hint" id="transferMeta"></p>
+    <input type="hidden" id="transferReceiptNo" value="">
+    <input type="hidden" id="transferFromTeam" value="">
+    <input type="hidden" id="transferToTeam" value="">
+
+    <p class="form-label">이관할 팀 선택</p>
+    <div class="transfer-team-cards" id="transferTeamCards" role="listbox" aria-label="이관 대상 팀">
+      <button type="button" class="transfer-team-card" data-team="domestic" role="option">내수영업팀</button>
+      <button type="button" class="transfer-team-card" data-team="affiliate" role="option">관계사영업팀</button>
+      <button type="button" class="transfer-team-card" data-team="export" role="option">수출영업팀</button>
+    </div>
+
+    <label class="form-label" for="transferProposed">이관 후 담당자 지정 (선택)</label>
+    <select id="transferProposed" class="form-select">
+      <option value="">미지정(승인 시 대상팀 팀장이 자동 배정됩니다)</option>
+    </select>
+    <p class="form-hint" id="transferProposedHint">담당자를 지정하면 요청 사유가 필수입니다.</p>
+
+    <label class="form-label" for="transferReason">요청 사유 <span id="transferReasonReq" class="form-label-sub" hidden>(필수)</span></label>
+    <textarea id="transferReason" class="form-input" rows="3" placeholder="이관 사유를 입력하세요 (담당자 지정 시 필수)"></textarea>
+
+    <div class="parts-modal-actions">
+      <button type="button" class="btn btn-outline" data-close-transfer>취소</button>
+      <button type="button" class="btn btn-primary" id="transferSubmitBtn">이관 요청 보내기</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const isEditMode = {{ 'true' if edit_receipt else 'false' }};
+  const editReceiptNo = {{ (edit_receipt.receipt_no if edit_receipt else '')|tojson }};
+  const salesForm = document.getElementById('salesForm');
+  const salesSubmitButton = salesForm.querySelector('button[type="submit"]');
+  let salesFormSubmitting = false;
+  let photoOptimizationInProgress = false;
+  let photoOptimizationPromise = Promise.resolve();
+  let waitingForPhotoOptimization = false;
+
+  salesForm.addEventListener('submit', event => {
+    if (photoOptimizationInProgress) {
+      event.preventDefault();
+      if (waitingForPhotoOptimization) return;
+      waitingForPhotoOptimization = true;
+      salesSubmitButton.disabled = true;
+      salesSubmitButton.setAttribute('aria-busy', 'true');
+      salesSubmitButton.textContent = '사진 최적화 중...';
+      photoOptimizationPromise.finally(() => {
+        waitingForPhotoOptimization = false;
+        salesForm.requestSubmit();
+      });
+      return;
+    }
+    if (salesFormSubmitting) {
+      event.preventDefault();
+      return;
+    }
+    salesFormSubmitting = true;
+    salesSubmitButton.disabled = true;
+    salesSubmitButton.setAttribute('aria-busy', 'true');
+    salesSubmitButton.textContent = isEditMode ? '수정 저장 중...' : '접수 등록 중...';
+  });
+
+  window.addEventListener('pageshow', () => {
+    salesFormSubmitting = false;
+    salesSubmitButton.disabled = false;
+    salesSubmitButton.removeAttribute('aria-busy');
+    salesSubmitButton.textContent = isEditMode ? '수정 저장' : '접수 등록';
+  });
+
+  (function setupSalesQualityShare() {
+    const cb = document.getElementById('salesSupportQuality');
+    const btn = document.getElementById('salesShareQualityBtn');
+    const mark = document.getElementById('salesShareQualityMark');
+    if (!cb || !btn || !mark) return;
+    let alreadyShared = !mark.hidden;
+
+    function sync() {
+      if (alreadyShared) {
+        cb.checked = true;
+        mark.hidden = false;
+        btn.hidden = true;
+        return;
+      }
+      mark.hidden = true;
+      btn.hidden = !cb.checked;
+    }
+
+    cb.addEventListener('change', sync);
+    btn.addEventListener('click', async () => {
+      cb.checked = true;
+      if (!isEditMode || !editReceiptNo) {
+        if (!salesForm.reportValidity()) return;
+        salesForm.requestSubmit();
+        return;
+      }
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/support-share', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ receipt_no: editReceiptNo, kind: 'quality' }),
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          alert(data.error || '공유에 실패했습니다.');
+          return;
+        }
+        alreadyShared = true;
+        mark.hidden = false;
+        mark.textContent = '✓ ' + (data.mark || '공유됨');
+        btn.hidden = true;
+        cb.checked = true;
+      } catch (err) {
+        alert('공유 요청을 보내지 못했습니다.');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+    sync();
+  })();
+
+  // 접수번호 미리보기 (접수날짜 변경 시)
+  const receiptDate = document.getElementById('receiptDate');
+  const receiptNoPreview = document.getElementById('receiptNoPreview');
+
+  async function updateReceiptNoPreview() {
+    if (isEditMode) return;
+    const dateVal = receiptDate.value;
+    if (!dateVal) {
+      receiptNoPreview.value = '';
+      return;
+    }
+    try {
+      const res = await fetch(`/api/receipt-no-preview?date=${dateVal}`);
+      const data = await res.json();
+      receiptNoPreview.value = data.receipt_no || '';
+    } catch {
+      receiptNoPreview.value = '';
+    }
+  }
+
+  receiptDate.addEventListener('change', updateReceiptNoPreview);
+
+  // 휴대전화 번호 자동 형식 변환 (010-0000-0000)
+  const phoneInput = document.getElementById('phoneInput');
+  function formatMobilePhone(value) {
+    const digits = value.replace(/\D/g, '').slice(0, 11);
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+  }
+  phoneInput.addEventListener('input', () => {
+    phoneInput.value = formatMobilePhone(phoneInput.value);
+  });
+
+  // 유상/무상 토글
+  const toggleBtns = document.querySelectorAll('#chargeTypeToggle .toggle-btn');
+  const chargeInput = document.getElementById('chargeTypeInput');
+  toggleBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      toggleBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      chargeInput.value = btn.dataset.value;
+    });
+  });
+
+  // 수출영업팀: AS 담당자 후보를 장호빈·김윤식만 노출 + 기본값 장호빈
+  // 영업부 부서장은 전 인원 지정 가능(팀 제한 없음)
+  const EXPORT_AS_ALLOWED = new Set({{ (export_as_allowed_codes or [])|tojson }});
+  const EXPORT_AS_DEFAULT = {{ (export_as_default or 'jang_hb')|tojson }};
+  const EXPORT_AS_SELF = {{ (export_as_self_code or 'kim_ys_ex')|tojson }};
+  const EXPORT_AS_SELF_NAME = {{ (export_as_self_name or '김윤식')|tojson }};
+  const IS_SALES_HEAD = {{ 'true' if is_sales_head or can_edit_all_ops else 'false' }};
+  const IS_EXPORT_RESPONSE_CHOOSER = {{ 'true' if can_choose_as_response_team else 'false' }};
+  const IS_RODS_LINE = {{ 'true' if is_rods else 'false' }};
+  const CAN_MULTI_ASSIGN_DEFAULT = {{ 'true' if current_user_can_multi_assign else 'false' }};
+  const AS_STAFF_MAX = {{ as_staff_max or 3 }};
+  const MULTI_DENIED_MSG = {{ (multi_assign_denied_msg or '담당자 여러 명 공동 지정은 팀장 또는 부서장·총괄·대표이사만 할 수 있습니다')|tojson }};
+  const AS_REASSIGN_OPTIONS = {{ (as_reassign_options or [])|tojson }};
+  const CURRENT_PERSON_TEAM = {{ (current_person_team or '')|tojson }};
+  const teamSelect = document.querySelector('select[name="team"]');
+  const teamHidden = document.querySelector('input[name="team"]');
+  const asStaffSelect = document.getElementById('asStaffSelect');
+  const asStaffExportHint = document.getElementById('asStaffExportHint');
+  let prevTeam = teamSelect ? teamSelect.value : (teamHidden ? teamHidden.value : CURRENT_PERSON_TEAM);
+
+  function resolveAsTeamId() {
+    if (teamSelect) return teamSelect.value || '';
+    if (teamHidden && teamHidden.value) return teamHidden.value;
+    return CURRENT_PERSON_TEAM || '';
+  }
+
+  function filterAsStaffByTeam(opts = {}) {
+    if (!asStaffSelect) return;
+    const team = resolveAsTeamId();
+    const isExport = team === 'export';
+    const current = asStaffSelect.value;
+    const restrictExport = isExport && !IS_SALES_HEAD;
+    asStaffSelect.querySelectorAll('optgroup[data-team-group]').forEach(group => {
+      let visible = 0;
+      group.querySelectorAll('option').forEach(opt => {
+        let show = true;
+        if (IS_SALES_HEAD) {
+          show = true;
+        } else if (restrictExport) {
+          show = EXPORT_AS_ALLOWED.has(opt.value);
+        } else if (IS_EXPORT_RESPONSE_CHOOSER && team === 'domestic') {
+          show = !opt.value || opt.value === EXPORT_AS_DEFAULT;
+        } else if (team) {
+          show = (opt.dataset.teamCode || '') === team;
+        } else {
+          show = true;
+        }
+        opt.hidden = !show;
+        opt.disabled = !show;
+        if (show) visible += 1;
+      });
+      group.hidden = visible === 0;
+      group.disabled = visible === 0;
+    });
+    if (restrictExport) {
+      const switchedToExport = opts.fromTeamChange && prevTeam !== 'export';
+      if (current && !EXPORT_AS_ALLOWED.has(current)) {
+        asStaffSelect.value = EXPORT_AS_DEFAULT;
+      } else if (!current && (switchedToExport || opts.forceDefault)) {
+        asStaffSelect.value = EXPORT_AS_DEFAULT;
+      }
+    } else if (isExport && opts.forceDefault && !current && !isEditMode) {
+      asStaffSelect.value = EXPORT_AS_DEFAULT;
+    } else if (current) {
+      const curOpt = asStaffSelect.querySelector(`option[value="${CSS.escape(current)}"]`);
+      if (curOpt && (curOpt.hidden || curOpt.disabled) && current !== '') {
+        asStaffSelect.value = '';
+      }
+    }
+    if (asStaffExportHint) {
+      asStaffExportHint.hidden = !isExport || IS_SALES_HEAD;
+    }
+  }
+
+  function syncExportResponseAsStaff(opts = {}) {
+    if (!IS_EXPORT_RESPONSE_CHOOSER) return;
+    if (isEditMode && !opts.fromTeamChange) return;
+    const hidden = document.getElementById('asStaffHidden');
+    const lockedWrap = document.getElementById('exportAsLockedWrap');
+    const label = document.getElementById('asStaffLockedLabel');
+    const hint = document.getElementById('exportResponseAsHint');
+    const domesticHint = document.getElementById('exportDomesticAsHint');
+    const team = teamSelect ? teamSelect.value : 'export';
+    if (team === 'export') {
+      if (lockedWrap) lockedWrap.hidden = false;
+      if (domesticHint) domesticHint.hidden = true;
+      if (hidden) {
+        hidden.disabled = false;
+        hidden.setAttribute('name', 'as_staff');
+        hidden.value = EXPORT_AS_SELF;
+      }
+      if (asStaffSelect) {
+        asStaffSelect.hidden = true;
+        asStaffSelect.disabled = true;
+        asStaffSelect.removeAttribute('name');
+      }
+      if (label) label.value = EXPORT_AS_SELF_NAME;
+      if (hint) hint.textContent = '수출영업팀 선택 시 김윤식에게 배정됩니다.';
+    } else {
+      if (lockedWrap) lockedWrap.hidden = true;
+      if (domesticHint) domesticHint.hidden = false;
+      if (hidden) {
+        hidden.disabled = true;
+        hidden.removeAttribute('name');
+      }
+      if (asStaffSelect) {
+        asStaffSelect.hidden = false;
+        asStaffSelect.disabled = false;
+        asStaffSelect.setAttribute('name', 'as_staff');
+        if (opts.fromTeamChange || !asStaffSelect.value) {
+          asStaffSelect.value = '';
+        }
+      }
+    }
+  }
+
+  if (teamSelect) {
+    teamSelect.addEventListener('change', () => {
+      filterAsStaffByTeam({ fromTeamChange: true });
+      syncExportResponseAsStaff({ fromTeamChange: true });
+      prevTeam = teamSelect.value;
+    });
+  }
+  // 팀 select 없음(팀장 고정 팀)이어도 AS 후보 필터 적용
+  filterAsStaffByTeam({
+    forceDefault: !isEditMode && resolveAsTeamId() === 'export' && !IS_EXPORT_RESPONSE_CHOOSER
+  });
+  syncExportResponseAsStaff();
+  prevTeam = resolveAsTeamId();
+
+  // 과거이력 실시간 조회 (6.9)
+  const customerInput = document.querySelector('input[name="customer_name"]');
+  const equipmentInput = document.querySelector('input[name="equipment_name"]');
+  let pastHistoryBox = document.getElementById('pastHistoryBox');
+  if (!pastHistoryBox && customerInput) {
+    pastHistoryBox = document.createElement('div');
+    pastHistoryBox.id = 'pastHistoryBox';
+    pastHistoryBox.className = 'past-history-box';
+    pastHistoryBox.innerHTML =
+      '<strong>동일 고객사 과거이력</strong>'
+      + '<div id="pastHistoryList" class="past-history-list"></div>'
+      + '<strong class="past-history-sub">동일 장비 건</strong>'
+      + '<div id="pastHistorySameEquip" class="past-history-list"></div>';
+    customerInput.closest('.form-group').parentElement.after(pastHistoryBox);
+  }
+
+  function reportLink(receiptNo) {
+    const returnUrl = encodeURIComponent(location.pathname + location.search + (location.hash || '#salesForm'));
+    return `/report?receipt_no=${encodeURIComponent(receiptNo)}&return_url=${returnUrl}`;
+  }
+
+  function saveSalesDraft() {
+    const form = document.getElementById('salesForm');
+    if (!form) return;
+    const data = {};
+    new FormData(form).forEach((v, k) => {
+      if (k === 'photos' || k === 'removed_photos') return;
+      if (data[k] !== undefined) {
+        if (!Array.isArray(data[k])) data[k] = [data[k]];
+        data[k].push(v);
+      } else data[k] = v;
+    });
+    sessionStorage.setItem('sales_work_draft', JSON.stringify(data));
+  }
+
+  function restoreSalesDraft() {
+    const raw = sessionStorage.getItem('sales_work_draft');
+    if (!raw) return;
+    try {
+      const data = JSON.parse(raw);
+      const form = document.getElementById('salesForm');
+      if (!form) return;
+      Object.keys(data).forEach(k => {
+        const el = form.elements.namedItem(k);
+        if (!el || el.type === 'file') return;
+        const val = data[k];
+        if (el instanceof RadioNodeList || (el.length && el[0] && el[0].type === 'checkbox')) {
+          const values = Array.isArray(val) ? val : [val];
+          Array.from(form.querySelectorAll(`[name="${k}"]`)).forEach(input => {
+            if (input.type === 'checkbox' || input.type === 'radio') {
+              input.checked = values.includes(input.value);
+            }
+          });
+        } else if (el.type === 'checkbox') {
+          el.checked = !!val;
+        } else {
+          el.value = Array.isArray(val) ? val[0] : val;
+        }
+      });
+      // 유무상 토글 동기화
+      const charge = form.querySelector('input[name="charge_type"]');
+      if (charge) {
+        document.querySelectorAll('#chargeTypeToggle .toggle-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.value === charge.value);
+        });
+      }
+    } catch (e) { /* ignore */ }
+    sessionStorage.removeItem('sales_work_draft');
+  }
+
+  function escPast(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function renderPastItems(targetId, items, emptyText) {
+    const list = document.getElementById(targetId);
+    if (!list) return;
+    if (!items || !items.length) {
+      list.innerHTML = `<p class="form-hint">${emptyText}</p>`;
+      return;
+    }
+    list.innerHTML =
+      '<div class="table-wrap past-history-table-wrap"><table class="receipt-table past-history-table mobile-list-table">'
+      + '<thead><tr><th>접수번호</th><th>접수일</th><th>장비명</th><th>증상</th><th>상태</th></tr></thead><tbody>'
+      + items.slice(0, 10).map(function (it) {
+        return '<tr>'
+          + '<td data-label="접수번호"><a class="receipt-link" href="' + reportLink(it.receipt_no) + '" data-save-draft>'
+          + escPast(it.receipt_no) + '</a></td>'
+          + '<td data-label="접수일">' + escPast(it.receipt_date || '—') + '</td>'
+          + '<td data-label="장비명">' + escPast(it.equipment_name || '—') + '</td>'
+          + '<td data-label="증상">' + escPast(it.symptoms || '—') + '</td>'
+          + '<td data-label="상태">' + escPast(it.status_label || '—') + '</td>'
+          + '</tr>';
+      }).join('')
+      + '</tbody></table></div>';
+  }
+
+  async function loadPastHistory() {
+    if (!customerInput) return;
+    const customer = customerInput.value.trim();
+    if (!customer) {
+      renderPastItems('pastHistoryList', [], '고객명을 입력하면 과거이력이 표시됩니다.');
+      renderPastItems('pastHistorySameEquip', [], '');
+      return;
+    }
+    const equipment = equipmentInput ? equipmentInput.value.trim() : '';
+    const exclude = {{ (edit_receipt.receipt_no if edit_receipt else '')|tojson }};
+    try {
+      const res = await fetch(`/api/past-history?customer=${encodeURIComponent(customer)}&equipment=${encodeURIComponent(equipment)}&exclude=${encodeURIComponent(exclude || '')}`);
+      const data = await res.json();
+      renderPastItems('pastHistoryList', data.same_customer || [], '과거 이력이 없습니다.');
+      renderPastItems(
+        'pastHistorySameEquip',
+        data.same_equipment || [],
+        equipment ? '동일 장비 과거 이력이 없습니다.' : '장비명을 입력하면 동일 장비 건이 표시됩니다.'
+      );
+    } catch (e) {
+      renderPastItems('pastHistoryList', [], '');
+      renderPastItems('pastHistorySameEquip', [], '');
+    }
+  }
+  if (customerInput) {
+    customerInput.addEventListener('input', () => { clearTimeout(customerInput._t); customerInput._t = setTimeout(loadPastHistory, 300); });
+    customerInput.addEventListener('change', loadPastHistory);
+    customerInput.addEventListener('blur', loadPastHistory);
+    if (equipmentInput) {
+      equipmentInput.addEventListener('input', () => { clearTimeout(equipmentInput._t); equipmentInput._t = setTimeout(loadPastHistory, 300); });
+      equipmentInput.addEventListener('change', loadPastHistory);
+    }
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest('[data-save-draft]');
+      if (a) saveSalesDraft();
+    });
+    restoreSalesDraft();
+    loadPastHistory();
+  }
+
+  // 사진 미리보기
+  const photoInput = document.getElementById('photoInput');
+  const previewList = document.getElementById('photoPreviewList');
+  const removedPhotoInputs = document.getElementById('removedPhotoInputs');
+  const photoUploadStatus = document.getElementById('photoUploadStatus');
+  const rawExistingPhotos = {{ (edit_receipt.get('photos', []) if edit_receipt else [])|tojson }};
+  const existingPhotoUrls = rawExistingPhotos
+    .map(photo => typeof photo === 'string' ? photo : photo.url)
+    .filter(Boolean);
+  const removedExistingPhotos = new Set();
+  let selectedPhotoFiles = [];
+  let photoPreviewRenderId = 0;
+
+  function syncPhotoInput() {
+    const transfer = new DataTransfer();
+    selectedPhotoFiles.forEach(file => transfer.items.add(file));
+    photoInput.files = transfer.files;
+  }
+
+  function syncRemovedPhotoInputs() {
+    removedPhotoInputs.innerHTML = '';
+    removedExistingPhotos.forEach(url => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'removed_photos';
+      input.value = url;
+      removedPhotoInputs.appendChild(input);
+    });
+  }
+
+  function renderPhotoPreviews() {
+    const renderId = ++photoPreviewRenderId;
+    previewList.innerHTML = '';
+    existingPhotoUrls.forEach(url => {
+      if (removedExistingPhotos.has(url)) return;
+      const item = document.createElement('div');
+      item.className = 'photo-preview-item';
+      const image = document.createElement('img');
+      image.src = url;
+      image.alt = '기존 첨부 사진';
+      const removeButton = document.createElement('button');
+      removeButton.type = 'button';
+      removeButton.className = 'photo-remove';
+      removeButton.setAttribute('aria-label', '기존 사진 삭제');
+      removeButton.innerHTML = '&times;';
+      removeButton.addEventListener('click', () => {
+        removedExistingPhotos.add(url);
+        syncRemovedPhotoInputs();
+        renderPhotoPreviews();
+      });
+      item.append(image, removeButton);
+      previewList.appendChild(item);
+    });
+    selectedPhotoFiles.forEach((file, index) => {
+      const reader = new FileReader();
+      reader.onload = event => {
+        if (renderId !== photoPreviewRenderId) return;
+        const item = document.createElement('div');
+        item.className = 'photo-preview-item';
+        item.innerHTML = `<img src="${event.target.result}" alt="미리보기"><button type="button" class="photo-remove" aria-label="사진 삭제">&times;</button>`;
+        item.querySelector('.photo-remove').addEventListener('click', () => {
+          selectedPhotoFiles.splice(index, 1);
+          syncPhotoInput();
+          renderPhotoPreviews();
+        });
+        previewList.appendChild(item);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  renderPhotoPreviews();
+
+  async function optimizePhoto(file) {
+    if (!file.type.startsWith('image/') || file.type === 'image/gif' || file.size <= 1024 * 1024) {
+      return file;
+    }
+    let imageSource;
+    let objectUrl;
+    try {
+      if ('createImageBitmap' in window) {
+        imageSource = await createImageBitmap(file);
+      } else {
+        objectUrl = URL.createObjectURL(file);
+        imageSource = await new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = reject;
+          image.src = objectUrl;
+        });
+      }
+      const maxSize = 1600;
+      const scale = Math.min(1, maxSize / Math.max(imageSource.width, imageSource.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(imageSource.width * scale));
+      canvas.height = Math.max(1, Math.round(imageSource.height * scale));
+      canvas.getContext('2d').drawImage(imageSource, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.78));
+      if (!blob || blob.size >= file.size) return file;
+      const baseName = file.name.replace(/\.[^.]+$/, '');
+      return new File([blob], `${baseName}.jpg`, {
+        type: 'image/jpeg',
+        lastModified: file.lastModified,
+      });
+    } catch {
+      return file;
+    } finally {
+      if (imageSource && imageSource.close) imageSource.close();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    }
+  }
+
+  photoInput.addEventListener('change', () => {
+    const incomingFiles = Array.from(photoInput.files);
+    if (!incomingFiles.length) return;
+    photoOptimizationInProgress = true;
+    photoInput.disabled = true;
+    photoUploadStatus.textContent = `사진 ${incomingFiles.length}장 최적화 중...`;
+
+    photoOptimizationPromise = (async () => {
+      for (const originalFile of incomingFiles) {
+        const file = await optimizePhoto(originalFile);
+        const key = `${file.name}:${file.size}:${file.lastModified}`;
+        const alreadySelected = selectedPhotoFiles.some(selected => (
+          `${selected.name}:${selected.size}:${selected.lastModified}` === key
+        ));
+        if (!alreadySelected) selectedPhotoFiles.push(file);
+      }
+      syncPhotoInput();
+      renderPhotoPreviews();
+      photoUploadStatus.textContent = `${selectedPhotoFiles.length}장 첨부 준비 완료`;
+    })().finally(() => {
+      photoOptimizationInProgress = false;
+      photoInput.disabled = false;
+    });
+  });
+
+  // 초기화 시 미리보기 제거
+  const resetBtn = document.getElementById('resetBtn');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      selectedPhotoFiles = [];
+      removedExistingPhotos.clear();
+      syncRemovedPhotoInputs();
+      photoInput.value = '';
+      renderPhotoPreviews();
+      toggleBtns.forEach(b => b.classList.remove('active'));
+      document.querySelector('#chargeTypeToggle .toggle-btn[data-value="free"]').classList.add('active');
+      chargeInput.value = 'free';
+      updateReceiptNoPreview();
+      // reset 후 AS 대응팀 값에 맞춰 AS 담당자 후보 다시 필터
+      setTimeout(filterAsStaffByTeam, 0);
+    });
+  }
+
+  // 접수 목록 검색·필터
+  const searchInput = document.getElementById('searchInput');
+  const filterBtns = document.querySelectorAll('#statusFilters .filter-btn');
+  const tableRows = document.querySelectorAll('#receiptTable tbody tr');
+  const tableEmpty = document.getElementById('tableEmpty');
+  let currentStatus = 'all';
+  let currentQueueFilter = '';
+
+  function applyFilters() {
+    const keyword = searchInput.value.trim().toLowerCase();
+    let visible = 0;
+    tableRows.forEach(row => {
+      const matchStatus = currentStatus === 'all' || row.dataset.status === currentStatus;
+      const matchSearch = !keyword || row.dataset.search.toLowerCase().includes(keyword);
+      const matchQueue = !currentQueueFilter
+        || (currentQueueFilter === 'team-unassigned-wait' && row.dataset.queueTeamWait === '1')
+        || (currentQueueFilter === 'team-in-progress' && row.dataset.queueTeamProgress === '1');
+      const show = matchStatus && matchSearch && matchQueue;
+      row.hidden = !show;
+      row.classList.toggle('is-filter-hidden', !show);
+      if (show) visible++;
+    });
+    tableEmpty.hidden = visible > 0;
+  }
+
+  function setQueueFilter(filter, scope) {
+    currentQueueFilter = filter || '';
+    (scope || document).querySelectorAll('.queue-summary-filter-btn').forEach((btn) => {
+      const on = !!filter && btn.dataset.queueFilter === filter;
+      btn.classList.toggle('is-active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    applyFilters();
+  }
+
+  document.querySelectorAll('#receiptList .queue-summary-filter-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const next = currentQueueFilter === btn.dataset.queueFilter ? '' : (btn.dataset.queueFilter || '');
+      setQueueFilter(next, document.getElementById('receiptList'));
+      if (next) {
+        document.getElementById('receiptTable')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+  });
+
+  searchInput.addEventListener('input', applyFilters);
+  filterBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      filterBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentStatus = btn.dataset.status;
+      applyFilters();
+    });
+  });
+
+  if (window.location.hash === '#receiptList') {
+    document.getElementById('receiptList').scrollIntoView({ behavior: 'smooth' });
+  }
+
+  // 유무상·청구·부품 (영업목록)
+  document.querySelectorAll('.js-toggle-charge').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const next = btn.dataset.type === 'paid' ? 'free' : 'paid';
+      if (next === 'free') {
+        if (!confirm('무상으로 전환하면 기존 청구비용이 초기화됩니다. 계속할까요?')) return;
+      }
+      const fd = new FormData();
+      fd.append('receipt_no', btn.dataset.no);
+      fd.append('charge_type', next);
+      const res = await fetch('/api/sales/charge-type', { method: 'POST', body: fd });
+      if (res.ok) location.reload();
+      else alert('변경 실패(권한 또는 오류)');
+    });
+  });
+  document.querySelectorAll('.js-set-billing').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const modeAns = prompt(
+        '청구비용 책정 방식을 선택하세요.\n\n1) 마진율 자동계산 (기본 30%)\n2) 직접 입력 (협의가)\n\n번호를 입력:',
+        '1'
+      );
+      if (modeAns === null) return;
+      const fd = new FormData();
+      fd.append('receipt_no', btn.dataset.no);
+      if (String(modeAns).trim() === '2') {
+        const amount = prompt('최종 청구비용(원)을 입력하세요:', '');
+        if (amount === null) return;
+        fd.append('mode', 'manual');
+        fd.append('amount', String(amount).replace(/,/g, ''));
+      } else {
+        const rate = prompt('마진율(%)을 입력하세요 (인건비 포함, 기본 30):', '30');
+        if (rate === null) return;
+        fd.append('mode', 'margin');
+        fd.append('margin_rate', String(rate).trim() || '30');
+      }
+      const res = await fetch('/api/sales/billing', { method: 'POST', body: fd });
+      if (res.ok) location.reload();
+      else alert('책정 실패(권한 또는 오류)');
+    });
+  });
+  document.querySelectorAll('.js-parts').forEach(btn => {
+    btn.addEventListener('click', () => openPartsModal(btn.dataset.no));
+  });
+
+  // —— 6.6.1 부품관리 모달 ——
+  const partsModal = document.getElementById('partsModal');
+  const salesPartsBody = document.getElementById('salesPartsBody');
+  let modalParts = [];
+  let modalReceiptNo = '';
+
+  function fmtNum(n) {
+    return Number(n || 0).toLocaleString('ko-KR');
+  }
+
+  function renderSalesParts() {
+    if (!salesPartsBody) return;
+    salesPartsBody.innerHTML = '';
+    if (!modalParts.length) {
+      salesPartsBody.innerHTML = '<tr><td colspan="6" class="text-muted">항목을 추가해 주세요.</td></tr>';
+    } else {
+      modalParts.forEach((p, idx) => {
+        const sub = (Number(p.qty) || 0) * (Number(p.unit_price) || 0);
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><input class="form-input sp-name" data-idx="${idx}" value="${(p.name || '').replace(/"/g, '&quot;')}"></td>
+          <td><input class="form-input sp-spec" data-idx="${idx}" value="${(p.spec || '').replace(/"/g, '&quot;')}"></td>
+          <td><input class="form-input sp-qty" data-idx="${idx}" type="number" min="0" step="0.01" value="${p.qty || 0}" style="width:80px"></td>
+          <td><input class="form-input sp-price" data-idx="${idx}" type="number" min="0" value="${p.unit_price || 0}" style="width:110px"></td>
+          <td class="sp-sub">${fmtNum(sub)}원</td>
+          <td><button type="button" class="part-remove sp-remove" data-idx="${idx}">×</button></td>`;
+        salesPartsBody.appendChild(tr);
+      });
+    }
+    const total = modalParts.reduce((s, p) => s + (Number(p.qty) || 0) * (Number(p.unit_price) || 0), 0);
+    const totalEl = document.getElementById('salesPartsTotal');
+    if (totalEl) totalEl.textContent = fmtNum(total);
+  }
+
+  function closePartsModal() {
+    if (partsModal) partsModal.hidden = true;
+    document.body.classList.remove('modal-open');
+  }
+
+  async function openPartsModal(receiptNo) {
+    modalReceiptNo = receiptNo;
+    const res = await fetch(`/api/sales/parts?receipt_no=${encodeURIComponent(receiptNo)}`);
+    const data = await res.json();
+    modalParts = (data.parts || []).map(p => ({
+      name: p.name || '',
+      spec: p.spec || '',
+      qty: p.qty || 0,
+      unit_price: p.unit_price || 0,
+    }));
+    if (!modalParts.length) modalParts = [{ name: '', spec: '', qty: 1, unit_price: 0 }];
+    const meta = document.getElementById('partsModalMeta');
+    if (meta) meta.textContent = `접수번호 ${receiptNo}`;
+    const hint = document.getElementById('partsBillingHint');
+    if (hint) {
+      if (data.charge_type === 'paid') {
+        hint.textContent = Number(data.billing_manual)
+          ? '유상 · 영업 직접책정 금액은 유지되고 부품 합계만 갱신됩니다.'
+          : `유상 · 저장 시 마진율(${(data.billing_margin_rate === null || data.billing_margin_rate === undefined || data.billing_margin_rate === '') ? 30 : data.billing_margin_rate}%)로 청구비용이 재계산됩니다.`;
+      } else {
+        hint.textContent = '무상 · 청구비용에는 영향 없이 내부 원가 기록용으로만 저장됩니다.';
+      }
+    }
+    renderSalesParts();
+    if (partsModal) partsModal.hidden = false;
+    document.body.classList.add('modal-open');
+  }
+
+  salesPartsBody?.addEventListener('input', (e) => {
+    const idx = Number(e.target.dataset.idx);
+    if (Number.isNaN(idx) || !modalParts[idx]) return;
+    if (e.target.classList.contains('sp-name')) modalParts[idx].name = e.target.value;
+    if (e.target.classList.contains('sp-spec')) modalParts[idx].spec = e.target.value;
+    if (e.target.classList.contains('sp-qty')) modalParts[idx].qty = Number(e.target.value) || 0;
+    if (e.target.classList.contains('sp-price')) modalParts[idx].unit_price = Number(e.target.value) || 0;
+    const row = e.target.closest('tr');
+    if (row) {
+      const sub = (Number(modalParts[idx].qty) || 0) * (Number(modalParts[idx].unit_price) || 0);
+      const cell = row.querySelector('.sp-sub');
+      if (cell) cell.textContent = fmtNum(sub) + '원';
+    }
+    const total = modalParts.reduce((s, p) => s + (Number(p.qty) || 0) * (Number(p.unit_price) || 0), 0);
+    const totalEl = document.getElementById('salesPartsTotal');
+    if (totalEl) totalEl.textContent = fmtNum(total);
+  });
+
+  salesPartsBody?.addEventListener('click', (e) => {
+    if (!e.target.classList.contains('sp-remove')) return;
+    modalParts.splice(Number(e.target.dataset.idx), 1);
+    renderSalesParts();
+  });
+
+  document.getElementById('salesAddPartBtn')?.addEventListener('click', () => {
+    modalParts.push({ name: '', spec: '', qty: 1, unit_price: 0 });
+    renderSalesParts();
+  });
+
+  document.querySelectorAll('[data-close-parts]').forEach(el => {
+    el.addEventListener('click', closePartsModal);
+  });
+
+  document.getElementById('salesPartsSaveBtn')?.addEventListener('click', async () => {
+    const cleaned = modalParts.filter(p => (p.name || '').trim());
+    const fd = new FormData();
+    fd.append('receipt_no', modalReceiptNo);
+    fd.append('parts_json', JSON.stringify(cleaned));
+    const save = await fetch('/api/sales/parts', { method: 'POST', body: fd });
+    if (save.ok) location.reload();
+    else alert('부품 저장 실패(권한 또는 오류)');
+  });
+
+  document.querySelectorAll('.js-assign-as').forEach(btn => {
+    btn.addEventListener('click', () => openAssignModal(btn));
+  });
+
+  const assignModal = document.getElementById('assignAsModal');
+  const assignMeta = document.getElementById('assignAsMeta');
+  const assignDropZone = document.getElementById('assignDropZone');
+  const assignDropSlot = document.getElementById('assignDropSlot');
+  const assignStaffGrid = document.getElementById('assignStaffGrid');
+  const assignSaveBtn = document.getElementById('assignAsSaveBtn');
+  const assignLimitBadge = document.getElementById('assignLimitBadge');
+  const assignHint = document.getElementById('assignHint');
+  const assignDropLabel = document.getElementById('assignDropLabel');
+  const assignPermissionWarn = document.getElementById('assignPermissionWarn');
+  let assignState = {
+    receiptNo: '', selectedId: '', selectedLabel: '', selectedIds: [], selectedLabels: [],
+    initialIds: [], canMulti: false, team: '', saving: false
+  };
+  let assignDragId = null;
+
+  function assignCanMulti() {
+    return !!assignState.canMulti;
+  }
+
+  function clearAssignWarn() {
+    if (!assignPermissionWarn) return;
+    assignPermissionWarn.hidden = true;
+    assignPermissionWarn.textContent = '';
+  }
+
+  function showAssignWarn(msg) {
+    if (!assignPermissionWarn) {
+      alert(msg);
+      return;
+    }
+    assignPermissionWarn.hidden = false;
+    assignPermissionWarn.textContent = msg;
+  }
+
+  function updateAssignLimitUi() {
+    const multi = assignCanMulti();
+    if (assignLimitBadge) {
+      assignLimitBadge.textContent = multi ? ('(최대 ' + AS_STAFF_MAX + '명)') : '(1명)';
+      assignLimitBadge.classList.toggle('is-multi', multi);
+    }
+    if (assignDropLabel) {
+      assignDropLabel.textContent = multi
+        ? ('지정할 담당자 — 공동 담당은 최대 ' + AS_STAFF_MAX + '명까지 지정할 수 있습니다.')
+        : '지정할 담당자 — 담당자 1명을 지정합니다. 2명 이상 공동 지정은 팀장 또는 부서장·총괄·대표이사만 가능합니다.';
+    }
+    if (assignHint) {
+      assignHint.textContent = multi
+        ? ('담당자 카드를 탭·클릭(또는 드래그)으로 선택/해제할 수 있습니다. 공동 담당은 최대 ' + AS_STAFF_MAX + '명까지입니다.')
+        : '담당자 카드를 탭·클릭으로 선택/해제할 수 있습니다. 다른 사람으로 바꾸려면 먼저 선택을 해제한 뒤 다시 선택하세요.';
+    }
+    if (assignStaffGrid) {
+      assignStaffGrid.setAttribute('aria-multiselectable', multi ? 'true' : 'false');
+    }
+    clearAssignWarn();
+  }
+
+  function assignOptionsForTeam(team) {
+    let options = (AS_REASSIGN_OPTIONS || []).slice();
+    if (IS_SALES_HEAD) return options;
+    if (team === 'export') {
+      return options.filter(o => EXPORT_AS_ALLOWED.has(o.id));
+    }
+    return options.filter(o => (o.team_code || '') === team);
+  }
+
+  function syncAssignLabels() {
+    const opts = assignOptionsForTeam(assignState.team || '');
+    assignState.selectedLabels = assignState.selectedIds.map(cid => {
+      const hit = opts.find(o => o.id === cid);
+      return (hit && hit.label) || cid;
+    });
+    assignState.selectedId = assignState.selectedIds[0] || '';
+    assignState.selectedLabel = assignState.selectedLabels[0] || '미지정';
+  }
+
+  function renderAssignSlot() {
+    if (!assignDropSlot) return;
+    assignDropSlot.innerHTML = '';
+    const ids = assignState.selectedIds || [];
+    const labels = assignState.selectedLabels || [];
+    if (!ids.length) {
+      const chip = document.createElement('div');
+      chip.className = 'assign-selected-chip is-unassigned';
+      chip.textContent = '미지정';
+      assignDropSlot.appendChild(chip);
+    } else {
+      ids.forEach((sid, idx) => {
+        const chip = document.createElement('div');
+        chip.className = 'assign-selected-chip';
+        chip.textContent = (labels[idx] || sid).replace(/\s*\([^)]*\)\s*$/, '').trim() || labels[idx] || sid;
+        chip.title = '탭하여 해제';
+        chip.addEventListener('click', () => {
+          assignState.selectedIds = assignState.selectedIds.filter(x => x !== sid);
+          syncAssignLabels();
+          clearAssignWarn();
+          renderAssignSlot();
+        });
+        assignDropSlot.appendChild(chip);
+      });
+    }
+    if (assignStaffGrid) {
+      assignStaffGrid.querySelectorAll('.assign-staff-card').forEach(card => {
+        const on = (assignState.selectedIds || []).includes(card.dataset.id || '');
+        card.classList.toggle('is-selected', on);
+        card.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+    }
+  }
+
+  function selectAssignStaff(id, label) {
+    id = id || '';
+    label = label || '미지정';
+    const multi = assignCanMulti();
+    const ids = assignState.selectedIds || [];
+    const initial = assignState.initialIds || [];
+
+    if (!id) {
+      assignState.selectedIds = [];
+      syncAssignLabels();
+      clearAssignWarn();
+      renderAssignSlot();
+      return;
+    }
+
+    if (multi) {
+      const idx = ids.indexOf(id);
+      if (idx >= 0) {
+        assignState.selectedIds = ids.filter(x => x !== id);
+        clearAssignWarn();
+      } else if (ids.length >= AS_STAFF_MAX) {
+        showAssignWarn('공동 담당은 최대 ' + AS_STAFF_MAX + '명까지입니다. 정원이 찬 상태에서는 추가할 수 없습니다.');
+        return;
+      } else {
+        assignState.selectedIds = ids.concat([id]);
+        clearAssignWarn();
+      }
+    } else {
+      const idx = ids.indexOf(id);
+      if (idx >= 0) {
+        // 선택 해제
+        assignState.selectedIds = ids.filter(x => x !== id);
+        clearAssignWarn();
+      } else if (ids.length === 0) {
+        assignState.selectedIds = [id];
+        clearAssignWarn();
+      } else if (initial.length > 1 && initial.includes(id)) {
+        // 기존 공동지정 인원 재선택(유지)
+        assignState.selectedIds = ids.concat([id]);
+        clearAssignWarn();
+      } else {
+        // 캡처와 동일: 교체 시 먼저 해제 요구 + 빨간 안내
+        showAssignWarn(
+          MULTI_DENIED_MSG + '. 먼저 선택된 담당자를 해제한 뒤 다시 선택해주세요.'
+        );
+        return;
+      }
+    }
+
+    syncAssignLabels();
+    renderAssignSlot();
+    if (assignDropZone) {
+      assignDropZone.classList.add('is-picked');
+      setTimeout(() => assignDropZone.classList.remove('is-picked'), 280);
+    }
+  }
+
+  function openAssignModal(btn) {
+    if (!assignModal) return;
+    const team = btn.dataset.team || '';
+    const current = btn.dataset.current || '';
+    const currentIds = (btn.dataset.currentIds || current || '')
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+    const canMulti = btn.dataset.canMulti === '1' || (btn.dataset.canMulti !== '0' && CAN_MULTI_ASSIGN_DEFAULT);
+    const options = assignOptionsForTeam(team);
+    const currentLabel = btn.dataset.currentLabel || (
+      current
+        ? ((options.find(o => o.id === current) || {}).label || current)
+        : '미지정'
+    );
+    assignState = {
+      receiptNo: btn.dataset.no || '',
+      team: team,
+      selectedId: currentIds[0] || current,
+      selectedLabel: currentLabel,
+      selectedIds: currentIds.slice(),
+      selectedLabels: currentIds.map(cid => {
+        const hit = options.find(o => o.id === cid);
+        return (hit && hit.label) || cid;
+      }),
+      initialIds: currentIds.slice(),
+      canMulti: !!canMulti,
+      saving: false,
+    };
+    updateAssignLimitUi();
+    if (assignMeta) {
+      const bits = [
+        btn.dataset.no || '',
+        btn.dataset.customer || '',
+        btn.dataset.equipment || '',
+      ].filter(Boolean);
+      assignMeta.textContent = bits.join(' · ');
+    }
+    if (assignStaffGrid) {
+      assignStaffGrid.innerHTML = '';
+      const all = [{ id: '', label: '미지정' }].concat(options);
+      all.forEach(opt => {
+        const card = document.createElement('button');
+        card.type = 'button';
+        card.className = 'assign-staff-card' + (opt.id ? '' : ' is-unassigned');
+        card.dataset.id = opt.id;
+        card.dataset.label = opt.label;
+        // 터치는 pointer 탭/드래그, 마우스는 HTML5 DnD + click
+        const coarse =
+          window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+        card.setAttribute('draggable', coarse ? 'false' : 'true');
+        card.setAttribute('role', 'option');
+        card.innerHTML =
+          '<span class="assign-staff-handle" aria-hidden="true"></span>' +
+          '<span class="assign-staff-name">' + escapeHtml(opt.label) + '</span>';
+        card.addEventListener('click', (e) => {
+          if (card.dataset.suppressClick === '1') {
+            card.dataset.suppressClick = '';
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          selectAssignStaff(opt.id, opt.label);
+        });
+        card.addEventListener('dragstart', (e) => {
+          assignDragId = opt.id;
+          card.dataset.didHtmlDrag = '0';
+          card.classList.add('is-dragging');
+          if (e.dataTransfer) {
+            e.dataTransfer.setData('text/plain', opt.id || '__none__');
+            e.dataTransfer.effectAllowed = 'move';
+          }
+          if (assignDropZone) assignDropZone.classList.add('is-target');
+        });
+        card.addEventListener('drag', () => {
+          card.dataset.didHtmlDrag = '1';
+        });
+        card.addEventListener('dragend', () => {
+          assignDragId = null;
+          card.classList.remove('is-dragging');
+          // 실제 드래그가 있었을 때만 click 억제(모바일 오탭 방지)
+          if (card.dataset.didHtmlDrag === '1') {
+            card.dataset.suppressClick = '1';
+          }
+          card.dataset.didHtmlDrag = '';
+          if (assignDropZone) {
+            assignDropZone.classList.remove('is-target', 'is-over');
+          }
+        });
+        bindAssignPointerDrag(card, opt);
+        assignStaffGrid.appendChild(card);
+      });
+    }
+    renderAssignSlot();
+    assignModal.hidden = false;
+  }
+
+  function escapeHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function closeAssignModal() {
+    if (!assignModal || assignState.saving) return;
+    assignModal.hidden = true;
+    assignDragId = null;
+  }
+
+  function bindAssignPointerDrag(card, opt) {
+    let dragging = false;
+    let active = false;
+    let ghost = null;
+    let startX = 0;
+    let startY = 0;
+    const DRAG_THRESHOLD = 8;
+
+    function cleanup() {
+      dragging = false;
+      active = false;
+      card.classList.remove('is-dragging');
+      if (ghost) {
+        ghost.remove();
+        ghost = null;
+      }
+      if (assignDropZone) {
+        assignDropZone.classList.remove('is-target', 'is-over');
+      }
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    }
+
+    function startGhost(e) {
+      if (ghost) return;
+      dragging = true;
+      card.classList.add('is-dragging');
+      ghost = card.cloneNode(true);
+      ghost.className = 'assign-staff-card assign-drag-ghost';
+      const rect = card.getBoundingClientRect();
+      ghost.style.left = rect.left + 'px';
+      ghost.style.top = rect.top + 'px';
+      ghost.style.transform =
+        'translate(' + (e.clientX - startX) + 'px, ' + (e.clientY - startY) + 'px)';
+      document.body.appendChild(ghost);
+      if (assignDropZone) assignDropZone.classList.add('is-target');
+    }
+
+    function onMove(e) {
+      if (!active) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (!dragging) {
+        // 세로 스크롤이면 선택/드래그 취소
+        if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > DRAG_THRESHOLD) {
+          cleanup();
+          return;
+        }
+        if (Math.abs(dx) > DRAG_THRESHOLD || Math.abs(dy) > DRAG_THRESHOLD) {
+          startGhost(e);
+        }
+      }
+      if (!dragging || !ghost) return;
+      ghost.style.transform = 'translate(' + dx + 'px, ' + dy + 'px)';
+      if (!assignDropZone) return;
+      const rect = assignDropZone.getBoundingClientRect();
+      const over =
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom;
+      assignDropZone.classList.toggle('is-over', over);
+    }
+
+    function onUp(e) {
+      if (!active) {
+        cleanup();
+        return;
+      }
+      if (!dragging) {
+        // 탭: pointerup에서 선택 + 이어지는 click 토글 방지(모바일 2중 이벤트)
+        cleanup();
+        card.dataset.suppressClick = '1';
+        selectAssignStaff(opt.id, opt.label);
+        return;
+      }
+      let dropped = false;
+      if (assignDropZone) {
+        const rect = assignDropZone.getBoundingClientRect();
+        dropped =
+          e.clientX >= rect.left &&
+          e.clientX <= rect.right &&
+          e.clientY >= rect.top &&
+          e.clientY <= rect.bottom;
+      }
+      cleanup();
+      card.dataset.suppressClick = '1';
+      if (dropped) {
+        selectAssignStaff(opt.id, opt.label);
+      }
+    }
+
+    card.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      // 마우스는 HTML5 DnD + click 사용
+      if (e.pointerType === 'mouse') return;
+      // 목록 세로 스크롤과 충돌 시 드래그만 포기하고 탭 선택은 유지
+      try { card.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      active = true;
+      dragging = false;
+      startX = e.clientX;
+      startY = e.clientY;
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+      window.addEventListener('pointercancel', onUp);
+    });
+  }
+
+  function findAssignCardById(id) {
+    if (!assignStaffGrid) return null;
+    return Array.from(assignStaffGrid.querySelectorAll('.assign-staff-card')).find(
+      (card) => (card.dataset.id || '') === (id || '')
+    ) || null;
+  }
+
+  if (assignDropZone) {
+    assignDropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      assignDropZone.classList.add('is-over');
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    });
+    assignDropZone.addEventListener('dragleave', () => {
+      assignDropZone.classList.remove('is-over');
+    });
+    assignDropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      assignDropZone.classList.remove('is-over', 'is-target');
+      let id = null;
+      if (e.dataTransfer) {
+        try { id = e.dataTransfer.getData('text/plain'); } catch (err) { id = null; }
+      }
+      if (id === null || id === undefined) {
+        id = assignDragId;
+      }
+      if (id === '__none__') id = '';
+      if (id === null || id === undefined) return;
+      const card = findAssignCardById(id);
+      const label = card
+        ? (card.dataset.label || '미지정')
+        : (id ? id : '미지정');
+      selectAssignStaff(id, label);
+    });
+  }
+
+  document.querySelectorAll('[data-close-assign]').forEach(el => {
+    el.addEventListener('click', closeAssignModal);
+  });
+
+  assignSaveBtn?.addEventListener('click', async () => {
+    if (!assignState.receiptNo || assignState.saving) return;
+    assignState.saving = true;
+    assignSaveBtn.disabled = true;
+    try {
+      const fd = new FormData();
+      fd.append('receipt_no', assignState.receiptNo);
+      const ids = (assignState.selectedIds && assignState.selectedIds.length)
+        ? assignState.selectedIds
+        : (assignState.selectedId ? [assignState.selectedId] : []);
+      if (assignCanMulti() && ids.length > AS_STAFF_MAX) {
+        alert('공동 담당은 최대 ' + AS_STAFF_MAX + '명까지입니다. 정원이 찬 상태에서는 추가할 수 없습니다.');
+        assignState.saving = false;
+        assignSaveBtn.disabled = false;
+        return;
+      }
+      if (!assignCanMulti()) {
+        const initial = assignState.initialIds || [];
+        const newcomers = ids.filter(id => !initial.includes(id));
+        if (ids.length > initial.length || (ids.length > 1 && newcomers.length)) {
+          alert(MULTI_DENIED_MSG);
+          assignState.saving = false;
+          assignSaveBtn.disabled = false;
+          return;
+        }
+      }
+      if (!ids.length) {
+        fd.append('as_staff', '');
+      } else {
+        ids.forEach(id => fd.append('as_staff', id));
+      }
+      const res = await fetch('/api/sales/assign-as', { method: 'POST', body: fd });
+      if (res.ok) location.reload();
+      else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || '담당자 재지정 실패(권한 또는 오류)');
+        assignState.saving = false;
+        assignSaveBtn.disabled = false;
+      }
+    } catch (err) {
+      alert('담당자 재지정 실패(네트워크 오류)');
+      assignState.saving = false;
+      assignSaveBtn.disabled = false;
+    }
+  });
+
+  // 팀 이관 요청
+  const transferModal = document.getElementById('transferModal');
+  const transferProposed = document.getElementById('transferProposed');
+  const transferToTeam = document.getElementById('transferToTeam');
+  const transferReasonReq = document.getElementById('transferReasonReq');
+  const TEAM_LABELS = { domestic: '내수영업팀', affiliate: '관계사영업팀', export: '수출영업팀' };
+
+  function updateTransferReasonRequired() {
+    const need = !!(transferProposed && transferProposed.value);
+    if (transferReasonReq) transferReasonReq.hidden = !need;
+  }
+
+  async function fillTransferProposed(team) {
+    if (!transferProposed) return;
+    const label = TEAM_LABELS[team] || '대상팀';
+    transferProposed.innerHTML =
+      '<option value="">미지정(승인 시 ' + label + ' 팀장이 자동 배정됩니다)</option>';
+    if (!team) return;
+    try {
+      const res = await fetch('/api/transfer/candidates?team=' + encodeURIComponent(team));
+      const data = await res.json().catch(() => ({}));
+      (data.items || []).forEach(o => {
+        const el = document.createElement('option');
+        el.value = o.id;
+        el.textContent = o.label || o.name || o.id;
+        transferProposed.appendChild(el);
+      });
+    } catch (err) { /* ignore */ }
+    updateTransferReasonRequired();
+  }
+
+  function selectTransferTeam(team) {
+    if (!transferToTeam) return;
+    transferToTeam.value = team || '';
+    document.querySelectorAll('#transferTeamCards .transfer-team-card').forEach(card => {
+      const on = card.dataset.team === team;
+      card.classList.toggle('is-selected', on);
+      card.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    fillTransferProposed(team);
+  }
+
+  document.querySelectorAll('#transferTeamCards .transfer-team-card').forEach(card => {
+    card.addEventListener('click', () => {
+      if (card.disabled) return;
+      selectTransferTeam(card.dataset.team || '');
+    });
+  });
+  transferProposed?.addEventListener('change', updateTransferReasonRequired);
+
+  document.querySelectorAll('.js-transfer-req').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!transferModal) return;
+      document.getElementById('transferReceiptNo').value = btn.dataset.no || '';
+      document.getElementById('transferMeta').textContent = [
+        btn.dataset.no, btn.dataset.customer, btn.dataset.equipment
+      ].filter(Boolean).join(' · ');
+      const from = btn.dataset.team || '';
+      document.getElementById('transferFromTeam').value = from;
+      document.querySelectorAll('#transferTeamCards .transfer-team-card').forEach(card => {
+        const same = card.dataset.team === from;
+        card.disabled = same;
+        card.classList.toggle('is-disabled', same);
+      });
+      const first = Array.from(document.querySelectorAll('#transferTeamCards .transfer-team-card'))
+        .find(c => !c.disabled);
+      selectTransferTeam(first ? first.dataset.team : '');
+      document.getElementById('transferReason').value = '';
+      updateTransferReasonRequired();
+      transferModal.hidden = false;
+    });
+  });
+  document.querySelectorAll('[data-close-transfer]').forEach(el => {
+    el.addEventListener('click', () => { if (transferModal) transferModal.hidden = true; });
+  });
+  document.getElementById('transferSubmitBtn')?.addEventListener('click', async () => {
+    const toTeam = (transferToTeam && transferToTeam.value) || '';
+    const proposed = (transferProposed && transferProposed.value) || '';
+    const reason = (document.getElementById('transferReason').value || '').trim();
+    if (!toTeam) {
+      alert('이관할 팀을 선택해 주세요.');
+      return;
+    }
+    if (proposed && !reason) {
+      alert('담당자를 지정하려면 이관 사유를 입력해 주세요.');
+      return;
+    }
+    const fd = new FormData();
+    fd.append('receipt_no', document.getElementById('transferReceiptNo').value || '');
+    fd.append('to_team', toTeam);
+    fd.append('proposed_as_staff', proposed);
+    fd.append('reason', reason);
+    const res = await fetch('/api/transfer/request', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      alert('이관 요청을 등록했습니다.');
+      location.reload();
+    } else alert(data.error || '이관 요청 실패');
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,9 @@
+<td data-label="고객명" class="sales-col-customer sales-stack-cell">
+  <span class="sales-stack-main">{{ r.customer_name }}</span>
+  {% if r.customer_contact %}
+  <span class="sales-stack-sub">{{ r.customer_contact }}</span>
+  {% endif %}
+  {% if r.office %}
+  <span class="sales-stack-sub sales-stack-muted">{{ r.office }}</span>
+  {% endif %}
+</td>

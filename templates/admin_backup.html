@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block title %}DB 백업{% endblock %}
+
+{% block content %}
+<div class="page-header admin-page-header">
+  <span class="page-breadcrumb">관리자 전용 화면</span>
+  <h1 class="page-title page-title-dark">DB 백업 · 엑셀 내보내기</h1>
+  <p class="page-desc">일일 자동 DB 백업 현황을 확인하고, 접수·이력 엑셀(xlsx)을 내려받을 수 있습니다.</p>
+</div>
+
+<section class="admin-master-section">
+  <article class="form-card admin-backup-monitor-card">
+    <div class="form-card-header">
+      <span>백업 현황 모니터링</span>
+      <span class="admin-backup-health admin-backup-health-{{ backup_monitor.health_code }}">{{ backup_monitor.health_label }}</span>
+    </div>
+    <div class="form-card-body">
+      <div class="admin-backup-status-grid">
+        <div class="admin-backup-stat">
+          <span class="admin-backup-stat-label">자동 백업</span>
+          <strong>{{ '사용' if backup_monitor.enabled else '중지' }}</strong>
+        </div>
+        <div class="admin-backup-stat">
+          <span class="admin-backup-stat-label">매일 실행 시각</span>
+          <strong>{{ backup_monitor.schedule_label }}</strong>
+        </div>
+        <div class="admin-backup-stat">
+          <span class="admin-backup-stat-label">다음 예정</span>
+          <strong>{{ backup_monitor.next_run_label }}</strong>
+        </div>
+        <div class="admin-backup-stat">
+          <span class="admin-backup-stat-label">보관 기간</span>
+          <strong>{{ backup_monitor.keep_days }}일</strong>
+        </div>
+        <div class="admin-backup-stat">
+          <span class="admin-backup-stat-label">최근 성공</span>
+          <strong>{{ backup_monitor.last_success_at }}</strong>
+        </div>
+        <div class="admin-backup-stat">
+          <span class="admin-backup-stat-label">최근 파일</span>
+          <strong class="admin-backup-stat-file">{{ backup_monitor.last_file }}</strong>
+        </div>
+      </div>
+
+      {% if backup_monitor.last_error %}
+      <p class="form-hint admin-backup-error-hint">최근 오류: {{ backup_monitor.last_error }}</p>
+      {% endif %}
+
+      <form class="admin-backup-settings-form" action="{{ url_for('admin_backup_auto_settings') }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label class="admin-active-toggle">
+          <input type="checkbox" name="enabled" value="1" {% if backup_monitor.enabled %}checked{% endif %}>
+          일일 자동 백업 사용
+        </label>
+        <div class="admin-backup-settings-row">
+          <div class="form-group">
+            <label class="form-label" for="backupHour">시</label>
+            <input id="backupHour" class="form-input" type="number" name="hour" min="0" max="23"
+                   value="{{ backup_monitor.hour }}" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="backupMinute">분</label>
+            <input id="backupMinute" class="form-input" type="number" name="minute" min="0" max="59"
+                   value="{{ backup_monitor.minute }}" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="backupKeepDays">보관(일)</label>
+            <input id="backupKeepDays" class="form-input" type="number" name="keep_days" min="1" max="365"
+                   value="{{ backup_monitor.keep_days }}" required>
+          </div>
+          <button type="submit" class="btn btn-primary admin-backup-btn">설정 저장</button>
+        </div>
+      </form>
+
+      <form action="{{ url_for('admin_backup_auto_run') }}" method="post" class="admin-backup-run-now">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" class="btn btn-outline admin-backup-btn">지금 수동 백업 실행</button>
+        <span class="form-hint">서버가 켜져 있는 동안 매일 지정 시각에 <code>db_backups/daily/</code> 로 자동 저장합니다.</span>
+      </form>
+
+      <h3 class="admin-backup-table-title">보관 중인 백업 파일</h3>
+      <div class="table-wrap">
+        <table class="home-dash-table admin-backup-files-table">
+          <thead>
+            <tr>
+              <th>구분</th>
+              <th>파일</th>
+              <th>크기</th>
+              <th>저장 시각</th>
+              <th>작업</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in backup_files %}
+            <tr>
+              <td>{{ f.kind }}</td>
+              <td class="admin-backup-file-name">{{ f.rel }}</td>
+              <td>{{ f.size_label }}</td>
+              <td>{{ f.mtime }}</td>
+              <td class="admin-backup-file-actions">
+                <a class="btn btn-outline btn-sm" href="{{ url_for('admin_backup_archive_download', rel=f.rel) }}">다운로드</a>
+                <form action="{{ url_for('admin_backup_archive_delete') }}" method="post"
+                      onsubmit="return confirm('이 백업 파일을 삭제할까요?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="rel" value="{{ f.rel }}">
+                  <button type="submit" class="btn btn-outline btn-sm">삭제</button>
+                </form>
+                <form action="{{ url_for('admin_backup_archive_restore') }}" method="post"
+                      onsubmit="return confirm('이 백업 파일로 현재 DB를 복원할까요?\n복원 전 현재 DB는 자동으로 보관됩니다.');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <input type="hidden" name="rel" value="{{ f.rel }}">
+                  <button type="submit" class="btn btn-outline btn-sm">복원</button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="5">아직 보관된 백업 파일이 없습니다. 수동 백업을 실행하거나 자동 백업 시각을 기다려 주세요.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if backup_monitor.history %}
+      <h3 class="admin-backup-table-title">최근 실행 이력</h3>
+      <div class="table-wrap">
+        <table class="home-dash-table admin-backup-history-table">
+          <thead>
+            <tr>
+              <th>시각</th>
+              <th>구분</th>
+              <th>결과</th>
+              <th>파일</th>
+              <th>크기</th>
+              <th>오류</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for h in backup_monitor.history[:15] %}
+            <tr>
+              <td>{{ h.at }}</td>
+              <td>{{ '자동' if h.trigger == 'auto' else '수동' }}</td>
+              <td>{% if h.ok %}<span class="admin-backup-ok">성공</span>{% else %}<span class="admin-backup-fail">실패</span>{% endif %}</td>
+              <td class="admin-backup-file-name">{{ h.file or '—' }}</td>
+              <td>{{ h.size_label or '—' }}</td>
+              <td>{{ h.error or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+  </article>
+
+  <div class="admin-backup-grid">
+    <article class="form-card admin-backup-card">
+      <div class="form-card-header">엑셀 내보내기</div>
+      <div class="form-card-body">
+        <p class="page-desc" style="margin-bottom:14px">
+          접수 목록·AS 이력 상세·로그인 계정·조직 인원을 시트로 나눠 <code>.xlsx</code> 파일로 내려받습니다.
+          Excel에서 바로 열어 분석·보관할 수 있습니다.
+        </p>
+        <ul class="admin-backup-meta">
+          <li>시트: 접수목록 / AS이력상세 / 로그인계정 / 조직인원 / 부서</li>
+          <li>접수 건수: <strong>{{ receipt_count }}</strong>건</li>
+          <li>이력 상세: <strong>{{ detail_count }}</strong>건</li>
+        </ul>
+        <a class="btn btn-primary btn-block admin-backup-btn" href="{{ url_for('admin_backup_excel') }}">
+          엑셀(.xlsx) 다운로드
+        </a>
+      </div>
+    </article>
+  </div>
+
+  <p class="form-hint" style="margin-top:16px">
+    ※ 자동·수동 DB 백업 파일은 상단 모니터링에서 내려받거나 삭제할 수 있습니다.
+    비밀번호 해시 등 민감 정보가 포함되므로 안전한 장소에만 보관하세요.
+  </p>
+  <p style="margin-top:8px">
+    <a href="{{ url_for('admin_users') }}" class="btn btn-outline">← 계정관리로</a>
+  </p>
+</section>
+{% endblock %}
