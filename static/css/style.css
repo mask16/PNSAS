@@ -109,6 +109,19 @@ a {
   outline: none;
 }
 
+.trouble-link-btn {
+  background: #e5e7eb;
+  border-color: #cfd3d8;
+  color: #374151;
+}
+
+.trouble-link-btn:hover,
+.trouble-link-btn:focus-visible {
+  background: #d8dce2;
+  border-color: var(--maroon);
+  color: var(--maroon);
+}
+
 .btn-login-open.is-select-look {
   min-width: 180px;
   min-height: 38px;

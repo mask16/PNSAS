@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>{% block title %}{% if product_line == 'rods' %}용접봉 AS 처리 시스템{% else %}웰딩 장비 AS 처리 시스템{% endif %}{% endblock %} - HYUNDAI WELDING</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260911f">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20261029a">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -35,6 +35,7 @@
           </div>
         </a>
         <a href="{{ url_for('switch_product') }}" class="product-switch-btn">제품군 변경</a>
+        <a href="http://43.201.229.107:5005/" class="product-switch-btn trouble-link-btn" target="_blank" rel="noopener noreferrer">트러블슈팅</a>
       </div>
       {% else %}
       <div class="logo-cluster">
@@ -46,6 +47,7 @@
         </div>
       </a>
       <a href="{{ url_for('switch_product') }}" class="product-switch-btn">제품군 변경</a>
+      <a href="http://43.201.229.107:5005/" class="product-switch-btn trouble-link-btn" target="_blank" rel="noopener noreferrer">트러블슈팅</a>
       </div>
       {% endif %}
 
